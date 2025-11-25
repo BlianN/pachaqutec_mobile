@@ -9,7 +9,7 @@ const getUser = async () => {
 };
 const removeUser = async () => await AsyncStorage.removeItem('userInfo');
 
-// AUTH - SIN TOKEN (tu backend no lo implementa)
+// AUTH
 export const login = async (email, password) => {
   try {
     console.log('🔵 Login URL:', `${BASE_URL}/login`);
@@ -26,7 +26,6 @@ export const login = async (email, password) => {
     const data = await response.json();
     console.log('📦 Data:', data);
     
-    // ✅ Cambio: verificar success en vez de token
     if (response.ok && data.success && data.usuario) {
       await saveUser(data.usuario);
       return { success: true, usuario: data.usuario };
@@ -55,7 +54,6 @@ export const register = async (nombre, email, password) => {
     const data = await response.json();
     console.log('📦 Data:', data);
     
-    // ✅ Cambio: verificar success en vez de token
     if (response.ok && data.success && data.usuario) {
       await saveUser(data.usuario);
       return { success: true, usuario: data.usuario };
@@ -82,8 +80,14 @@ export const getTouristLocations = async () => {
   const response = await fetch(`${BASE_URL}/lugares`, {
     headers: { 'Accept': 'application/json' }
   });
+  
   if (!response.ok) throw new Error('Error al cargar lugares');
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('📦 Lugares data:', data);
+  
+  // ✅ Tu backend devuelve { success, count, lugares: [...] }
+  return data.lugares || [];
 };
 
 // FAVORITOS
@@ -98,8 +102,14 @@ export const getFavorites = async () => {
   const response = await fetch(`${BASE_URL}/favoritos/usuario/${userInfo.id}`, {
     headers: { 'Accept': 'application/json' }
   });
+  
   if (!response.ok) throw new Error('Error al cargar favoritos');
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('📦 Favoritos data:', data);
+  
+  // ✅ Tu backend devuelve { success, count, favoritos: [...] }
+  return data.favoritos || [];
 };
 
 export const addFavorite = async (locationId) => {
@@ -146,8 +156,14 @@ export const getMyReviews = async () => {
   const response = await fetch(`${BASE_URL}/resenas/usuario/${userInfo.id}`, {
     headers: { 'Accept': 'application/json' }
   });
+  
   if (!response.ok) throw new Error('Error al cargar reseñas');
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('📦 Reseñas data:', data);
+  
+  // ✅ Manejar el formato que devuelva tu backend
+  return data.resenas || data.data || [];
 };
 
 export const createReview = async (locationId, calificacion, texto) => {
