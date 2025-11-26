@@ -4,24 +4,41 @@
     "slug": "pachaqutec_mobile",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png", 
     "scheme": "pachaqutec",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.pachaqutec.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF6B00"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAi6ooxbnNlHXpNXd6mQTz2vnUWu00jWGs"
+        }
+      }
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pachaqutec.app"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7459e3a5-07fc-4532-93bb-2d18226a932d"
+      }
     }
   }
 }

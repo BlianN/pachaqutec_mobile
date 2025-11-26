@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert
+  Alert,
+  ActivityIndicator // Importante para el feedback de carga
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,32 +23,55 @@ const { width, height } = Dimensions.get('window');
 export default function Registro() {
   const router = useRouter();
   
+  // Estados del formulario
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  
+  // Estados de control
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // Nuevo: Para mostrar/ocultar pass
   const [loading, setLoading] = useState(false);
 
+  // --- FUNCIÓN PARA VALIDAR CORREO ---
+  const validarEmail = (email) => {
+    // Esta "magia" verifica que tenga formato: algo @ algo . algo
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
+
   const handleSubmit = async () => {
-    // Validaciones (las que ya tienes)
+    // 1. Validaciones de Campos Vacíos
     if (!nombre || !email || !password || !passwordConfirm) {
       Alert.alert("Faltan datos", "Por favor completa todos los campos.");
       return;
     }
-    if (!aceptaTerminos) {
-      Alert.alert("Términos", "Debes aceptar los términos de uso.");
+
+    // 2. Validación de Formato de Correo (Lo que pidió tu profe)
+    if (!validarEmail(email)) {
+      Alert.alert("Correo inválido", "Por favor ingresa un correo válido (ejemplo: usuario@dominio.com).");
       return;
     }
-    if (password !== passwordConfirm) {
-      Alert.alert("Error", "Las contraseñas no coinciden.");
-      return;
-    }
+
+    // 3. Validaciones de Contraseña
     if (password.length < 6) {
       Alert.alert("Seguridad", "La contraseña debe tener al menos 6 caracteres.");
       return;
     }
+
+    if (password !== passwordConfirm) {
+      Alert.alert("Error", "Las contraseñas no coinciden.");
+      return;
+    }
+
+    // 4. Validación de Términos
+    if (!aceptaTerminos) {
+      Alert.alert("Términos", "Debes aceptar los términos de uso para continuar.");
+      return;
+    }
   
+    // 5. Enviar al Backend
     setLoading(true);
     
     try {
@@ -61,6 +85,7 @@ export default function Registro() {
           }
         ]);
       } else {
+        // Error que viene del backend (ej: email ya existe)
         Alert.alert("Error", response.message || "No se pudo crear la cuenta");
       }
     } catch (error) {
@@ -73,7 +98,7 @@ export default function Registro() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       
       <ImageBackground
         source={{ uri: 'https://images.unsplash.com/photo-1582489720279-db8b8a6b8a7a?auto=format&fit=crop&w=2000&q=80' }}
@@ -109,6 +134,7 @@ export default function Registro() {
 
               <View style={styles.form}>
                 
+                {/* Nombre */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Nombre o apodo</Text>
                   <View style={styles.inputWrapper}>
@@ -124,6 +150,7 @@ export default function Registro() {
                   </View>
                 </View>
 
+                {/* Email */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Correo electrónico</Text>
                   <View style={styles.inputWrapper}>
@@ -141,6 +168,7 @@ export default function Registro() {
                   </View>
                 </View>
 
+                {/* Contraseña */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Contraseña</Text>
                   <View style={styles.inputWrapper}>
@@ -151,12 +179,13 @@ export default function Registro() {
                       placeholderTextColor="#A0AEC0"
                       value={password}
                       onChangeText={setPassword}
-                      secureTextEntry
+                      secureTextEntry={!showPassword} // Aquí está el truco visual
                       editable={!loading}
                     />
                   </View>
                 </View>
 
+                {/* Confirmar Contraseña */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Confirmar Contraseña</Text>
                   <View style={styles.inputWrapper}>
@@ -167,12 +196,25 @@ export default function Registro() {
                       placeholderTextColor="#A0AEC0"
                       value={passwordConfirm}
                       onChangeText={setPasswordConfirm}
-                      secureTextEntry
+                      secureTextEntry={!showPassword} // Aquí también afecta
                       editable={!loading}
                     />
                   </View>
                 </View>
 
+                {/* Checkbox: Mostrar Contraseña */}
+                <TouchableOpacity 
+                  style={styles.checkboxContainer} 
+                  onPress={() => setShowPassword(!showPassword)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.checkbox, showPassword && styles.checkboxChecked]}>
+                    {showPassword && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.termsText}>Mostrar contraseña</Text>
+                </TouchableOpacity>
+
+                {/* Checkbox: Términos */}
                 <TouchableOpacity 
                   style={styles.checkboxContainer} 
                   onPress={() => setAceptaTerminos(!aceptaTerminos)}
@@ -187,6 +229,7 @@ export default function Registro() {
                   </Text>
                 </TouchableOpacity>
 
+                {/* Botón Registro */}
                 <TouchableOpacity 
                   onPress={handleSubmit} 
                   activeOpacity={0.8} 
@@ -199,9 +242,11 @@ export default function Registro() {
                     end={{ x: 1, y: 0 }}
                     style={styles.registerBtn}
                   >
-                    <Text style={styles.registerBtnText}>
-                      {loading ? 'Creando cuenta...' : '🚀 Crear cuenta'}
-                    </Text>
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={styles.registerBtnText}>🚀 Crear cuenta</Text>
+                    )}
                   </LinearGradient>
                 </TouchableOpacity>
 
@@ -249,10 +294,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    paddingTop: 40,
+    paddingTop: 60,
     paddingBottom: 40,
   },
   
+  // CARD STYLE
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.98)',
     borderRadius: 24,
@@ -264,6 +310,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   
+  // HEADER
   header: {
     alignItems: 'center',
     marginBottom: 20,
@@ -295,6 +342,7 @@ const styles = StyleSheet.create({
     color: '#718096',
   },
 
+  // FORM
   form: {
     width: '100%',
   },
@@ -328,11 +376,12 @@ const styles = StyleSheet.create({
     color: '#1A202C',
   },
 
+  // CHECKBOX
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 5,
+    marginBottom: 15, // Un poco menos de margen para que se agrupen mejor
+    marginTop: 0,
   },
   checkbox: {
     width: 22,
@@ -363,6 +412,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  // BUTTON
   btnContainer: {
     width: '100%',
     shadowColor: '#FF6B00',
@@ -370,11 +420,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 5,
+    marginTop: 10,
   },
   registerBtn: {
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center', // Centra el ActivityIndicator
   },
   registerBtnText: {
     color: 'white',
@@ -382,6 +434,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  // FOOTER
   footerLinks: {
     marginTop: 20,
   },

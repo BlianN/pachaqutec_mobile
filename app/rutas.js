@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -9,52 +9,86 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Image,
+  ActivityIndicator,
   Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, Callout } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import * as API from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
+// Coordenadas por defecto (Arequipa) por si el lugar no tiene lat/lng
 const AREQUIPA_CENTER = {
   latitude: -16.398866,
   longitude: -71.536961,
-  latitudeDelta: 0.02,
-  longitudeDelta: 0.02,
+  latitudeDelta: 0.03,
+  longitudeDelta: 0.03,
 };
 
-// Lugares hardcodeados (después puedes conectar con API)
-const LUGARES_DATA = [
-  { id: 1, nombre: 'Plaza de Armas', categoria: 'Histórico', lat: -16.398866, lng: -71.536961 },
-  { id: 2, nombre: 'Monasterio Santa Catalina', categoria: 'Histórico', lat: -16.396067, lng: -71.536600 },
-  { id: 3, nombre: 'Mirador de Yanahuara', categoria: 'Mirador', lat: -16.387572, lng: -71.541974 },
-  { id: 4, nombre: 'Mundo Alpaca', categoria: 'Cultura', lat: -16.392918, lng: -71.535439 },
-  { id: 5, nombre: 'Mercado San Camilo', categoria: 'Gastronomía', lat: -16.402852, lng: -71.534973 },
-];
-
-const CATEGORIAS = [
-  { id: 'todos', nombre: 'Todos', icono: '🌎' },
-  { id: 'Histórico', nombre: 'Histórico', icono: '🏛️' },
-  { id: 'Aventura', nombre: 'Aventura', icono: '🧗' },
-  { id: 'Gastronomía', nombre: 'Comida', icono: '🍲' },
+// Estilo de mapa limpio (elimina ruido de Google Maps)
+const MAP_STYLE = [
+  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] }
 ];
 
 export default function RutasPage() {
   const router = useRouter();
   const mapRef = useRef(null);
 
+  // --- ESTADOS ---
+  const [lugares, setLugares] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [filtroCat, setFiltroCat] = useState("todos");
+  
+  // Ruta
   const [lugaresRuta, setLugaresRuta] = useState([]);
   const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
+  const [modoRuta, setModoRuta] = useState(false); // Para mostrar info de ruta
 
-  const lugaresFiltrados = LUGARES_DATA.filter(l => {
+  // --- CARGAR DATOS ---
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const data = await API.getTouristLocations();
+        // Aseguramos que tengan lat/lng (si vienen vacíos del backend, ponemos random cerca al centro para que no explote)
+        const lugaresMapeados = data.map(l => ({
+          ...l,
+          lat: l.lat || (AREQUIPA_CENTER.latitude + (Math.random() - 0.5) * 0.01),
+          lng: l.lng || (AREQUIPA_CENTER.longitude + (Math.random() - 0.5) * 0.01),
+          // Asignar icono según categoría si no viene
+          icono: l.categoria?.includes('Gastr') ? '🍲' : 
+                 l.categoria?.includes('Hist') ? '🏛️' : 
+                 l.categoria?.includes('Avent') ? '🧗' : '📍'
+        }));
+        setLugares(lugaresMapeados);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  // --- FILTROS ---
+  // Extraemos categorías únicas de los lugares cargados
+  const categorias = useMemo(() => {
+    const cats = new Set(lugares.map(l => l.categoria || 'Otros'));
+    return ['todos', ...Array.from(cats)];
+  }, [lugares]);
+
+  const lugaresFiltrados = lugares.filter(l => {
     const matchNombre = l.nombre.toLowerCase().includes(busqueda.toLowerCase());
     const matchCat = filtroCat === 'todos' || l.categoria === filtroCat;
     return matchNombre && matchCat;
   });
 
+  // --- ACCIONES MAPA ---
   const irALugar = (lugar) => {
     setLugarSeleccionado(lugar);
     mapRef.current?.animateToRegion({
@@ -62,62 +96,50 @@ export default function RutasPage() {
       longitude: lugar.lng,
       latitudeDelta: 0.005,
       longitudeDelta: 0.005,
-    }, 1000);
+    }, 800);
   };
 
   const toggleRuta = (lugar) => {
-    if (lugaresRuta.find(l => l.id === lugar.id)) {
+    const existe = lugaresRuta.find(l => l.id === lugar.id);
+    if (existe) {
       setLugaresRuta(prev => prev.filter(l => l.id !== lugar.id));
     } else {
+      if (lugaresRuta.length >= 10) return Alert.alert("Límite", "Máximo 10 paradas.");
       setLugaresRuta(prev => [...prev, lugar]);
     }
   };
 
-  const verRutaCompleta = () => {
-    if (lugaresRuta.length < 2) {
-      Alert.alert("Ruta vacía", "Selecciona al menos 2 lugares para crear una ruta.");
-      return;
-    }
+  const generarRuta = () => {
+    if (lugaresRuta.length < 2) return Alert.alert("Ruta", "Selecciona al menos 2 lugares.");
     
-    const coordenadas = lugaresRuta.map(l => ({
-      latitude: l.lat,
-      longitude: l.lng
-    }));
-
-    mapRef.current?.fitToCoordinates(coordenadas, {
-      edgePadding: { top: 50, right: 50, bottom: 350, left: 50 },
-      animated: true,
+    setModoRuta(true);
+    // Zoom para ver toda la ruta
+    const coords = lugaresRuta.map(l => ({ latitude: l.lat, longitude: l.lng }));
+    mapRef.current?.fitToCoordinates(coords, {
+      edgePadding: { top: 100, right: 50, bottom: 350, left: 50 },
+      animated: true
     });
   };
 
   const limpiarRuta = () => {
     setLugaresRuta([]);
+    setModoRuta(false);
     mapRef.current?.animateToRegion(AREQUIPA_CENTER, 1000);
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* MAPA */}
+      {/* --- MAPA DE FONDO --- */}
       <MapView
         ref={mapRef}
         style={styles.map}
         initialRegion={AREQUIPA_CENTER}
-        showsUserLocation={true}
-        showsCompass={true}
+        customMapStyle={MAP_STYLE}
+        showsUserLocation
       >
-        {lugaresFiltrados.map(lugar => (
-          <Marker
-            key={lugar.id}
-            coordinate={{ latitude: lugar.lat, longitude: lugar.lng }}
-            title={lugar.nombre}
-            description={lugar.categoria}
-            onPress={() => setLugarSeleccionado(lugar)}
-            pinColor={lugaresRuta.find(l => l.id === lugar.id) ? '#FF6B00' : '#667eea'}
-          />
-        ))}
-
+        {/* Línea de Ruta */}
         {lugaresRuta.length >= 2 && (
           <Polyline
             coordinates={lugaresRuta.map(l => ({ latitude: l.lat, longitude: l.lng }))}
@@ -126,97 +148,139 @@ export default function RutasPage() {
             lineDashPattern={[1]}
           />
         )}
+
+        {/* Marcadores */}
+        {lugaresFiltrados.map((lugar, index) => {
+          const enRuta = lugaresRuta.findIndex(r => r.id === lugar.id);
+          const esSeleccionado = lugarSeleccionado?.id === lugar.id;
+
+          return (
+            <Marker
+              key={lugar.id}
+              coordinate={{ latitude: lugar.lat, longitude: lugar.lng }}
+              onPress={() => setLugarSeleccionado(lugar)}
+              zIndex={esSeleccionado ? 999 : 1}
+            >
+              <View style={[styles.markerContainer, esSeleccionado && styles.markerSelected]}>
+                {enRuta !== -1 ? (
+                  <View style={styles.markerBadge}>
+                    <Text style={styles.markerNumber}>{enRuta + 1}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.markerDot}>
+                    <Text style={{fontSize: 12}}>{lugar.icono}</Text>
+                  </View>
+                )}
+                {esSeleccionado && <View style={styles.markerArrow} />}
+              </View>
+            </Marker>
+          );
+        })}
       </MapView>
 
-      {/* HEADER FLOTANTE */}
-      <View style={styles.headerFloating}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput 
-            placeholder="Buscar destino..." 
-            style={styles.searchInput}
+      {/* --- HEADER FLOTANTE --- */}
+      <View style={styles.topContainer}>
+        <View style={styles.searchBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backIcon}>
+            <Ionicons name="arrow-back" size={24} color="#4A5568" />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            placeholder="¿A dónde quieres ir?"
             value={busqueda}
             onChangeText={setBusqueda}
           />
+          <Ionicons name="search" size={20} color="#A0AEC0" style={{marginRight: 10}} />
         </View>
-      </View>
 
-      {/* CATEGORÍAS */}
-      <View style={styles.chipsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15}}>
-          {CATEGORIAS.map(cat => (
-            <TouchableOpacity 
-              key={cat.id} 
-              style={[styles.chip, filtroCat === cat.id && styles.chipActive]}
-              onPress={() => setFiltroCat(cat.id)}
+        {/* Categorías Chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
+          {categorias.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              style={[styles.chip, filtroCat === cat && styles.chipActive]}
+              onPress={() => setFiltroCat(cat)}
             >
-              <Text style={[styles.chipText, filtroCat === cat.id && styles.chipTextActive]}>
-                {cat.icono} {cat.nombre}
+              <Text style={[styles.chipText, filtroCat === cat && styles.chipTextActive]}>
+                {cat.charAt(0).toUpperCase() + cat.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
 
-      {/* PANEL INFERIOR */}
-      <View style={styles.bottomPanel}>
-        <View style={styles.panelHandle} />
+      {/* --- PANEL INFERIOR (Lista o Ruta) --- */}
+      <View style={styles.bottomSheet}>
         
-        <View style={styles.rutaStatus}>
-          <Text style={styles.rutaCounter}>
-            {lugaresRuta.length} paradas seleccionadas
-          </Text>
+        {/* Handle para deslizar (visual) */}
+        <View style={styles.handleBar} />
+
+        {/* Header del Panel: Resumen Ruta */}
+        <View style={styles.routeHeader}>
+          <View>
+            <Text style={styles.routeTitle}>
+              {lugaresRuta.length === 0 ? "Crea tu Ruta" : `${lugaresRuta.length} paradas`}
+            </Text>
+            <Text style={styles.routeSubtitle}>
+              {lugaresRuta.length === 0 ? "Selecciona (+) lugares para empezar" : "Ruta personalizada"}
+            </Text>
+          </View>
+          
           {lugaresRuta.length > 0 && (
-            <TouchableOpacity onPress={limpiarRuta}>
-              <Text style={styles.clearText}>Limpiar</Text>
-            </TouchableOpacity>
+            <View style={{flexDirection: 'row', gap: 10}}>
+              <TouchableOpacity style={styles.iconBtn} onPress={limpiarRuta}>
+                <Ionicons name="trash-outline" size={20} color="#E53E3E" />
+              </TouchableOpacity>
+              
+              {lugaresRuta.length >= 2 && (
+                <TouchableOpacity onPress={generarRuta}>
+                  <LinearGradient colors={['#FF6B00', '#FF8C00']} style={styles.btnGo}>
+                    <Text style={styles.btnGoText}>IR</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         </View>
 
-        {lugaresRuta.length >= 2 ? (
-          <TouchableOpacity style={styles.btnRoute} onPress={verRutaCompleta}>
-            <LinearGradient
-              colors={['#FF6B00', '#FF8C00']}
-              style={styles.btnGradient}
-            >
-              <Text style={styles.btnRouteText}>🗺️ Ver Ruta Completa</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+        {/* Lista Horizontal de Lugares */}
+        {loading ? (
+          <ActivityIndicator color="#FF6B00" style={{marginTop: 20}} />
         ) : (
-          <View style={styles.hintBox}>
-            <Text style={styles.hintText}>Selecciona lugares ("+") para armar tu camino</Text>
-          </View>
-        )}
-
-        <Text style={styles.listTitle}>Lugares cercanos</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesList}>
-          {lugaresFiltrados.map(lugar => {
-            const enRuta = lugaresRuta.find(l => l.id === lugar.id);
-            return (
-              <TouchableOpacity 
-                key={lugar.id} 
-                style={[styles.placeCard, enRuta && styles.placeCardActive]}
-                onPress={() => irALugar(lugar)}
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardCategory}>{lugar.categoria}</Text>
-                  <TouchableOpacity onPress={() => toggleRuta(lugar)}>
-                    <Text style={[styles.addIcon, enRuta && styles.addIconActive]}>
-                      {enRuta ? '✓' : '+'}
-                    </Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            contentContainerStyle={styles.placesList}
+          >
+            {lugaresFiltrados.map(lugar => {
+              const enRuta = lugaresRuta.some(r => r.id === lugar.id);
+              
+              return (
+                <TouchableOpacity 
+                  key={lugar.id} 
+                  style={[styles.card, enRuta && styles.cardActive]}
+                  activeOpacity={0.9}
+                  onPress={() => irALugar(lugar)}
+                >
+                  <Image source={{ uri: lugar.imagen_url }} style={styles.cardImg} />
+                  
+                  {/* Botón Agregar/Quitar */}
+                  <TouchableOpacity 
+                    style={[styles.addBtn, enRuta && styles.addBtnActive]}
+                    onPress={() => toggleRuta(lugar)}
+                  >
+                    <Ionicons name={enRuta ? "remove" : "add"} size={20} color="white" />
                   </TouchableOpacity>
-                </View>
-                <Text style={styles.cardTitle} numberOfLines={2}>{lugar.nombre}</Text>
-                <Text style={styles.cardCoords}>
-                  {lugar.lat.toFixed(3)}, {lugar.lng.toFixed(3)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+
+                  <View style={styles.cardContent}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{lugar.nombre}</Text>
+                    <Text style={styles.cardCat}>{lugar.categoria}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
     </View>
@@ -224,160 +288,84 @@ export default function RutasPage() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  map: {
-    width: width,
-    height: height,
-    ...StyleSheet.absoluteFillObject,
-  },
-  
-  headerFloating: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    zIndex: 10,
-  },
-  backBtn: {
-    backgroundColor: 'white',
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width:0, height:2},
-    shadowOpacity:0.2,
-    shadowRadius:4,
-  },
-  backArrow: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    height: 45,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width:0, height:2},
-    shadowOpacity:0.2,
-    shadowRadius:4,
-  },
-  searchIcon: { marginRight: 10, fontSize: 16 },
-  searchInput: { flex: 1, fontSize: 15, color: '#333' },
+  container: { flex: 1, backgroundColor: '#fff' },
+  map: { ...StyleSheet.absoluteFillObject },
 
-  chipsContainer: {
-    position: 'absolute',
-    top: 110,
-    left: 0,
-    right: 0,
-    zIndex: 10,
+  // HEADER FLOTANTE
+  topContainer: { position: 'absolute', top: 50, left: 0, right: 0, paddingHorizontal: 20 },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: 'white',
+    borderRadius: 16, padding: 5, elevation: 5, shadowColor: '#000',
+    shadowOffset: {width:0, height:2}, shadowOpacity:0.15, shadowRadius:5
   },
+  backIcon: { padding: 10 },
+  input: { flex: 1, fontSize: 16, color: '#2D3748' },
+  
+  chipsScroll: { marginTop: 12 },
   chip: {
-    backgroundColor: 'white',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    marginRight: 10,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    backgroundColor: 'white', paddingVertical: 8, paddingHorizontal: 16,
+    borderRadius: 20, marginRight: 8, elevation: 3, shadowColor:'#000',
+    shadowOpacity:0.1, shadowRadius:3
   },
-  chipActive: {
-    backgroundColor: '#2d3748',
-  },
-  chipText: { fontWeight: '600', color: '#4a5568', fontSize: 13 },
+  chipActive: { backgroundColor: '#2D3748' },
+  chipText: { fontWeight: '600', color: '#4A5568' },
   chipTextActive: { color: 'white' },
 
-  bottomPanel: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    padding: 20,
-    paddingBottom: 40,
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: {width:0, height:-5},
-    shadowOpacity:0.1,
-    shadowRadius:10,
-    height: 320,
+  // MARKERS
+  markerContainer: { alignItems: 'center' },
+  markerSelected: { transform: [{scale: 1.2}] },
+  markerDot: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: 'white',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FF6B00',
+    shadowColor:'#000', shadowOpacity:0.3, elevation: 5
   },
-  panelHandle: {
-    width: 40,
-    height: 5,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2.5,
-    alignSelf: 'center',
-    marginBottom: 15,
+  markerBadge: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: '#FF6B00',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white',
+    shadowColor:'#000', shadowOpacity:0.3, elevation: 5
   },
-  rutaStatus: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
+  markerNumber: { color: 'white', fontWeight: 'bold' },
+  markerArrow: {
+    width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+    borderStyle: 'solid', backgroundColor: 'transparent', borderLeftColor: 'transparent',
+    borderRightColor: 'transparent', borderTopColor: '#FF6B00', marginTop: -2
   },
-  rutaCounter: { fontSize: 14, fontWeight: '700', color: '#2d3748' },
-  clearText: { fontSize: 13, color: '#e53e3e', fontWeight: '600' },
-  
-  btnRoute: {
-    marginBottom: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-    elevation: 5,
-  },
-  btnGradient: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  btnRouteText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  
-  hintBox: {
-    backgroundColor: '#f7fafc',
-    padding: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#edf2f7',
-  },
-  hintText: { color: '#718096', fontSize: 12 },
 
-  listTitle: { fontSize: 16, fontWeight: 'bold', color: '#1a202c', marginBottom: 10 },
-  placesList: { gap: 15, paddingRight: 20 },
+  // BOTTOM SHEET
+  bottomSheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingVertical: 10, paddingBottom: 30, elevation: 20, shadowColor:'#000',
+    shadowOffset:{width:0, height:-5}, shadowOpacity:0.1, shadowRadius:10,
+    height: 280 // Altura fija para mostrar lista
+  },
+  handleBar: { width: 40, height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, alignSelf: 'center', marginBottom: 15 },
   
-  placeCard: {
-    width: 140,
-    height: 110,
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    justifyContent: 'space-between',
-    elevation: 2,
+  routeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 15 },
+  routeTitle: { fontSize: 18, fontWeight: '800', color: '#1A202C' },
+  routeSubtitle: { fontSize: 12, color: '#718096' },
+  
+  iconBtn: { padding: 10, backgroundColor: '#FFF5F5', borderRadius: 12 },
+  btnGo: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
+  btnGoText: { color: 'white', fontWeight: '800', fontSize: 14 },
+
+  // CARDS
+  placesList: { paddingHorizontal: 20, gap: 15 },
+  card: {
+    width: 160, height: 180, backgroundColor: 'white', borderRadius: 16,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, elevation: 3,
+    borderWidth: 2, borderColor: 'transparent', overflow: 'hidden'
   },
-  placeCardActive: {
-    borderColor: '#FF6B00',
-    backgroundColor: '#fffaf0',
+  cardActive: { borderColor: '#FF6B00' },
+  cardImg: { width: '100%', height: 110 },
+  cardContent: { padding: 10 },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: '#2D3748' },
+  cardCat: { fontSize: 11, color: '#718096', marginTop: 2 },
+  
+  addBtn: {
+    position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'white'
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardCategory: { fontSize: 10, color: '#718096', backgroundColor: '#f7fafc', padding: 3, borderRadius: 5 },
-  addIcon: { fontSize: 18, color: '#cbd5e0', fontWeight: 'bold' },
-  addIconActive: { color: '#FF6B00' },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: '#2d3748' },
-  cardCoords: { fontSize: 9, color: '#a0aec0' },
+  addBtnActive: { backgroundColor: '#FF6B00', borderColor: '#FF6B00' }
 });

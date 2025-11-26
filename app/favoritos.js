@@ -1,8 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  Image, 
+  TouchableOpacity, 
+  Alert, 
+  ActivityIndicator, 
+  StyleSheet, 
+  StatusBar,
+  Dimensions
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as API from '../services/api';
+
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = (width - 48) / 2; // 2 columnas con espaciado
 
 export default function FavoritosPage() {
   const router = useRouter();
@@ -10,104 +24,168 @@ export default function FavoritosPage() {
   const [loading, setLoading] = useState(true);
   const [usuario, setUsuario] = useState(null);
 
-  useEffect(() => {
-    cargarDatos();
-  }, []);
+  // Cargar datos cada vez que la pantalla gana foco
+  useFocusEffect(
+    useCallback(() => {
+      cargarDatos();
+    }, [])
+  );
 
   const cargarDatos = async () => {
     try {
-      const userInfo = await API.getUserInfo();
+      setLoading(true);
+      const userInfo = await API.getUserInfo().catch(() => null);
       setUsuario(userInfo);
       
       if (userInfo) {
         const favs = await API.getFavorites();
-        console.log('✅ Favoritos cargados:', favs);
-        setFavoritos(Array.isArray(favs) ? favs : []);
+        // Aseguramos que sea un array y filtramos duplicados por ID si es necesario
+        const listaFavs = Array.isArray(favs) ? favs : [];
+        setFavoritos(listaFavs);
+      } else {
+        setFavoritos([]);
       }
     } catch (error) {
       console.error('Error cargando favoritos:', error);
-      Alert.alert("Error", "No se pudieron cargar los favoritos");
-      setFavoritos([]);
+      // No mostramos alerta intrusiva al cargar, solo si falla una acción
     } finally {
       setLoading(false);
     }
   };
 
+  const confirmarEliminacion = (item) => {
+    Alert.alert(
+      "Eliminar Favorito",
+      `¿Deseas quitar "${item.nombre}" de tus favoritos?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Eliminar", 
+          style: "destructive", 
+          onPress: () => eliminarFavorito(item) 
+        }
+      ]
+    );
+  };
+
   const eliminarFavorito = async (item) => {
+    // Actualización optimista en UI
+    const listaAnterior = [...favoritos];
+    setFavoritos(prev => prev.filter(f => f.favorito_id !== item.favorito_id));
+
     try {
       const resultado = await API.removeFavorite(item.favorito_id);
-      
-      if (resultado) {
-        Alert.alert("Éxito", "Favorito eliminado");
-        cargarDatos();
-      } else {
-        Alert.alert("Error", "No se pudo eliminar el favorito");
+      if (!resultado) {
+        throw new Error("Error al eliminar");
       }
     } catch (error) {
-      console.error('Error eliminando favorito:', error);
-      Alert.alert("Error", "No se pudo eliminar el favorito");
+      // Revertir si falla
+      setFavoritos(listaAnterior);
+      Alert.alert("Error", "No se pudo eliminar el favorito. Intenta de nuevo.");
     }
   };
 
-  if (loading) {
+  const irALugares = () => router.push('/lugares');
+
+  // Renderizado condicional del contenido principal
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#FF6B00" />
+          <Text style={styles.loadingText}>Cargando tu colección...</Text>
+        </View>
+      );
+    }
+
+    if (!usuario) {
+      return (
+        <View style={styles.centerContainer}>
+          <Ionicons name="lock-closed-outline" size={80} color="#CBD5E0" />
+          <Text style={styles.emptyTitle}>Colección Privada</Text>
+          <Text style={styles.emptyText}>Inicia sesión para ver tus lugares guardados.</Text>
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/login')}>
+            <Text style={styles.btnText}>Iniciar Sesión</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (favoritos.length === 0) {
+      return (
+        <View style={styles.centerContainer}>
+          <Ionicons name="heart-dislike-outline" size={80} color="#CBD5E0" />
+          <Text style={styles.emptyTitle}>Tu lista está vacía</Text>
+          <Text style={styles.emptyText}>
+            Explora Arequipa y guarda aquí los destinos que te enamoren.
+          </Text>
+          <TouchableOpacity style={styles.btnPrimary} onPress={irALugares}>
+            <Text style={styles.btnText}>Explorar Lugares</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B35" />
-        <Text style={styles.loadingText}>Cargando favoritos...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mis Favoritos</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {favoritos.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="heart-outline" size={80} color="#CCC" />
-            <Text style={styles.emptyText}>No tienes favoritos aún</Text>
-            <Text style={styles.emptySubtext}>Explora lugares y agrégalos a favoritos</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.grid}>
+          {favoritos.map((item) => (
             <TouchableOpacity 
-              style={styles.exploreButton}
-              onPress={() => router.push('/lugares')}
+              key={item.favorito_id || item.id} // Fallback ID
+              style={styles.card}
+              activeOpacity={0.9}
+              // Al tocar la tarjeta podríamos ir al detalle (opcional)
+              // onPress={() => router.push({ pathname: '/lugares', params: { id: item.id } })}
             >
-              <Text style={styles.exploreButtonText}>Explorar Lugares</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.grid}>
-            {favoritos.map((item) => (
-              <View key={item.favorito_id} style={styles.card}>
+              <View style={styles.imageContainer}>
                 <Image 
                   source={{ uri: item.imagen_url }} 
                   style={styles.cardImage}
                   resizeMode="cover"
                 />
-                <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle} numberOfLines={2}>{item.nombre}</Text>
-                  <Text style={styles.cardCategory}>{item.categoria}</Text>
-                  <Text style={styles.cardDescription} numberOfLines={3}>
-                    {item.descripcion}
-                  </Text>
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryText}>{item.categoria}</Text>
                 </View>
+                
                 <TouchableOpacity 
-                  style={styles.deleteButton}
-                  onPress={() => eliminarFavorito(item)}
+                  style={styles.deleteBtn}
+                  onPress={() => confirmarEliminacion(item)}
                 >
-                  <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
                 </TouchableOpacity>
               </View>
-            ))}
-          </View>
-        )}
+
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle} numberOfLines={1}>{item.nombre}</Text>
+                <Text style={styles.cardDesc} numberOfLines={2}>
+                  {item.descripcion}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
       </ScrollView>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#1A202C" />
+        </TouchableOpacity>
+        <View style={{flex:1, alignItems:'center', marginRight: 40}}> 
+          <Text style={styles.headerTitle}>Mis Favoritos</Text>
+          <Text style={styles.headerSubtitle}>
+            {usuario ? `${favoritos.length} destinos guardados` : 'Tu lista de deseos'}
+          </Text>
+        </View>
+      </View>
+
+      {renderContent()}
     </View>
   );
 }
@@ -115,123 +193,128 @@ export default function FavoritosPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#FAFAFA', // Fondo ligeramente gris
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
-  },
+  
+  // HEADER
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
     paddingTop: 50,
-    paddingBottom: 16,
-    backgroundColor: '#FFF',
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: '#F1F5F9',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  scrollView: {
-    flex: 1,
-  },
+  backBtn: { padding: 5 },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1A202C' },
+  headerSubtitle: { fontSize: 12, color: '#718096', marginTop: 2 },
+
+  // CONTENT
   scrollContent: {
     padding: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  exploreButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  exploreButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
+    paddingBottom: 40,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: 16,
   },
+
+  // STATES (Loading, Empty)
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: { marginTop: 15, color: '#718096', fontWeight: '500' },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#2D3748', marginTop: 20, marginBottom: 10 },
+  emptyText: { textAlign: 'center', color: '#718096', lineHeight: 22, marginBottom: 30 },
+  btnPrimary: {
+    backgroundColor: '#FF6B00',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 30,
+    shadowColor: '#FF6B00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  btnText: { color: 'white', fontWeight: '700', fontSize: 16 },
+
+  // CARDS
   card: {
-    width: '48%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    marginBottom: 16,
-    overflow: 'hidden',
-    elevation: 3,
+    width: CARD_WIDTH,
+    backgroundColor: 'white',
+    borderRadius: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  imageContainer: {
+    height: 140,
+    position: 'relative',
   },
   cardImage: {
     width: '100%',
-    height: 120,
+    height: '100%',
+  },
+  categoryBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  categoryText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2D3748',
+    textTransform: 'uppercase',
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'white',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cardContent: {
     padding: 12,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A202C',
     marginBottom: 4,
   },
-  cardCategory: {
+  cardDesc: {
     fontSize: 12,
-    color: '#FF6B35',
-    marginBottom: 4,
-  },
-  cardDescription: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    color: '#718096',
+    lineHeight: 18,
+    height: 36, // Altura fija para alineación (2 líneas aprox)
   },
 });
