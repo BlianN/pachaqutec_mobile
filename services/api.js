@@ -86,7 +86,6 @@ export const getTouristLocations = async () => {
   const data = await response.json();
   console.log('📦 Lugares data:', data);
   
-  // ✅ Tu backend devuelve { success, count, lugares: [...] }
   return data.lugares || [];
 };
 
@@ -108,7 +107,6 @@ export const getFavorites = async () => {
   const data = await response.json();
   console.log('📦 Favoritos data:', data);
   
-  // ✅ Tu backend devuelve { success, count, favoritos: [...] }
   return data.favoritos || [];
 };
 
@@ -127,12 +125,17 @@ export const addFavorite = async (locationId) => {
       'Accept': 'application/json'
     },
     body: JSON.stringify({ 
-      usuario_id: userInfo.id,
-      lugar_id: locationId 
+      usuarioId: userInfo.id,  // ✅ camelCase
+      lugarId: locationId       // ✅ camelCase
     })
   });
-  if (!response.ok) throw new Error('Error al agregar favorito');
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('📦 Add favorito response:', data);
+  
+  if (!response.ok) throw new Error(data.error || 'Error al agregar favorito');
+  
+  return data;
 };
 
 export const removeFavorite = async (favoritoId) => {
@@ -141,6 +144,10 @@ export const removeFavorite = async (favoritoId) => {
     method: 'DELETE',
     headers: { 'Accept': 'application/json' }
   });
+  
+  const data = await response.json();
+  console.log('📦 Remove favorito response:', data);
+  
   return response.ok;
 };
 
@@ -162,7 +169,6 @@ export const getMyReviews = async () => {
   const data = await response.json();
   console.log('📦 Reseñas data:', data);
   
-  // ✅ Manejar el formato que devuelva tu backend
   return data.resenas || data.data || [];
 };
 
@@ -181,12 +187,17 @@ export const createReview = async (locationId, calificacion, texto) => {
       'Accept': 'application/json'
     },
     body: JSON.stringify({ 
-      usuario_id: userInfo.id,
-      lugar_id: locationId,
+      usuarioId: userInfo.id,  // ✅ camelCase
+      lugarId: locationId,      // ✅ camelCase
       calificacion,
       texto 
     })
   });
-  if (!response.ok) throw new Error('Error al crear reseña');
-  return await response.json();
+  
+  const data = await response.json();
+  console.log('📦 Create reseña response:', data);
+  
+  if (!response.ok) throw new Error(data.error || 'Error al crear reseña');
+  
+  return data;
 };

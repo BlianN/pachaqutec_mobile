@@ -1,27 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Image, 
-  TouchableOpacity, 
-  Dimensions, 
-  StatusBar,
-  Alert,
-  ActivityIndicator
-} from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as API from '../services/api';
-
-const { width } = Dimensions.get('window');
 
 export default function FavoritosPage() {
   const router = useRouter();
-  
-  const [loading, setLoading] = useState(true);
   const [favoritos, setFavoritos] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [usuario, setUsuario] = useState(null);
 
   useEffect(() => {
@@ -35,37 +21,25 @@ export default function FavoritosPage() {
       
       if (userInfo) {
         const favs = await API.getFavorites();
-        setFavoritos(favs);
+        console.log('✅ Favoritos cargados:', favs);
+        setFavoritos(Array.isArray(favs) ? favs : []);
       }
     } catch (error) {
       console.error('Error cargando favoritos:', error);
       Alert.alert("Error", "No se pudieron cargar los favoritos");
+      setFavoritos([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const confirmarEliminacion = (id) => {
-    Alert.alert(
-      "Eliminar favorito",
-      "¿Estás seguro que quieres sacar este lugar de tu lista?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Eliminar", 
-          style: "destructive",
-          onPress: () => eliminarFavorito(id) 
-        }
-      ]
-    );
-  };
-
-  const eliminarFavorito = async (id) => {
+  const eliminarFavorito = async (item) => {
     try {
-      const success = await API.removeFavorite(id);
-      if (success) {
-        setFavoritos(prev => prev.filter(item => item.id !== id));
+      const resultado = await API.removeFavorite(item.favorito_id);
+      
+      if (resultado) {
         Alert.alert("Éxito", "Favorito eliminado");
+        cargarDatos();
       } else {
         Alert.alert("Error", "No se pudo eliminar el favorito");
       }
@@ -75,100 +49,65 @@ export default function FavoritosPage() {
     }
   };
 
-  const irAExplorar = () => {
-    router.push('/lugares');
-  };
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF6B35" />
+        <Text style={styles.loadingText}>Cargando favoritos...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      
-      {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Mi Lista de Deseos</Text>
-          <Text style={styles.headerSubtitle}>Tus futuros destinos</Text>
-        </View>
-        <View style={{width: 40}} /> 
+        <Text style={styles.headerTitle}>Mis Favoritos</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* CONTENIDO */}
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#ff6b00" />
-          <Text style={styles.loadingText}>Cargando tu colección...</Text>
-        </View>
-      ) : !usuario ? (
-        // ESTADO: NO LOGUEADO
-        <View style={styles.centerContainer}>
-          <Text style={styles.iconLarge}>🔒</Text>
-          <Text style={styles.stateTitle}>Colección Privada</Text>
-          <Text style={styles.stateText}>Inicia sesión para ver tus destinos guardados.</Text>
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/login')}>
-            <Text style={styles.btnText}>Iniciar Sesión</Text>
-          </TouchableOpacity>
-        </View>
-      ) : favoritos.length === 0 ? (
-        // ESTADO: VACÍO
-        <View style={styles.centerContainer}>
-          <Text style={styles.iconLarge}>💔</Text>
-          <Text style={styles.stateTitle}>Tu lista está vacía</Text>
-          <Text style={styles.stateText}>Explora lugares y dale al corazón para guardarlos aquí.</Text>
-          <TouchableOpacity style={styles.btnPrimary} onPress={irAExplorar}>
-            <Text style={styles.btnText}>Explorar Lugares</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        // ESTADO: CON FAVORITOS (GRID)
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {favoritos.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="heart-outline" size={80} color="#CCC" />
+            <Text style={styles.emptyText}>No tienes favoritos aún</Text>
+            <Text style={styles.emptySubtext}>Explora lugares y agrégalos a favoritos</Text>
+            <TouchableOpacity 
+              style={styles.exploreButton}
+              onPress={() => router.push('/lugares')}
+            >
+              <Text style={styles.exploreButtonText}>Explorar Lugares</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
           <View style={styles.grid}>
             {favoritos.map((item) => (
-              <TouchableOpacity 
-                key={item.id} 
-                style={styles.card}
-                activeOpacity={0.9}
-                onPress={() => Alert.alert("Detalle", `Ver detalle de ${item.nombre}`)}
-              >
-                <View style={styles.imageContainer}>
-                  <Image 
-                    source={{ uri: item.imagen_url || 'https://images.unsplash.com/photo-1568632234157-ce7aecd03d0d?auto=format&fit=crop&w=800&q=80' }} 
-                    style={styles.cardImage} 
-                  />
-                  
-                  {/* Badge Categoría */}
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryText}>{item.categoria || 'General'}</Text>
-                  </View>
-
-                  {/* Botón Eliminar Flotante */}
-                  <TouchableOpacity 
-                    style={styles.deleteBtn} 
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      confirmarEliminacion(item.id);
-                    }}
-                  >
-                    <Text style={styles.deleteIcon}>🗑️</Text>
-                  </TouchableOpacity>
-                </View>
-
+              <View key={item.favorito_id} style={styles.card}>
+                <Image 
+                  source={{ uri: item.imagen_url }} 
+                  style={styles.cardImage}
+                  resizeMode="cover"
+                />
                 <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{item.nombre}</Text>
-                  <Text style={styles.cardDesc} numberOfLines={2}>
-                    {item.descripcion || 'Sin descripción disponible'}
+                  <Text style={styles.cardTitle} numberOfLines={2}>{item.nombre}</Text>
+                  <Text style={styles.cardCategory}>{item.categoria}</Text>
+                  <Text style={styles.cardDescription} numberOfLines={3}>
+                    {item.descripcion}
                   </Text>
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.seeMore}>Ver detalles →</Text>
-                  </View>
                 </View>
-              </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.deleteButton}
+                  onPress={() => eliminarFavorito(item)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
-        </ScrollView>
-      )}
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -176,50 +115,71 @@ export default function FavoritosPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F5F5F5',
   },
-  
-  header: {
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    backgroundColor: 'white',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  backBtn: { padding: 5, marginRight: 15 },
-  backArrow: { fontSize: 24, color: '#2d3748' },
-  headerTitleContainer: { flex: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1a202c' },
-  headerSubtitle: { fontSize: 12, color: '#718096' },
-
-  centerContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    backgroundColor: '#F5F5F5',
   },
-  loadingText: { marginTop: 15, color: '#718096' },
-  iconLarge: { fontSize: 60, marginBottom: 20 },
-  stateTitle: { fontSize: 22, fontWeight: '700', color: '#2d3748', marginBottom: 10 },
-  stateText: { textAlign: 'center', color: '#718096', marginBottom: 30, lineHeight: 22 },
-  btnPrimary: {
-    backgroundColor: '#ff6b00',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 25,
-    elevation: 3,
-    shadowColor: '#ff6b00',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
-  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
-    padding: 20,
+    padding: 16,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  exploreButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  exploreButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   grid: {
     flexDirection: 'row',
@@ -227,79 +187,51 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   card: {
-    width: (width - 55) / 2,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
+    width: '48%',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    overflow: 'hidden',
-  },
-  imageContainer: {
-    height: 140,
-    position: 'relative',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   cardImage: {
     width: '100%',
-    height: '100%',
-  },
-  categoryBadge: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 15,
-  },
-  categoryText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#2d3748',
-    textTransform: 'uppercase',
-  },
-  deleteBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'white',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-  },
-  deleteIcon: {
-    fontSize: 14,
+    height: 120,
   },
   cardContent: {
     padding: 12,
   },
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#2d3748',
-    marginBottom: 5,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
   },
-  cardDesc: {
+  cardCategory: {
     fontSize: 12,
-    color: '#718096',
+    color: '#FF6B35',
+    marginBottom: 4,
+  },
+  cardDescription: {
+    fontSize: 12,
+    color: '#666',
     lineHeight: 16,
-    marginBottom: 10,
-    height: 32,
   },
-  cardFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 8,
+  deleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
-  seeMore: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ff6b00',
-  }
 });

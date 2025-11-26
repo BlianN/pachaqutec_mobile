@@ -1,27 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Image, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  StatusBar,
-  Alert,
-  Dimensions
-} from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as API from '../services/api';
-
-const { width } = Dimensions.get('window');
 
 export default function LugaresPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const [lugares, setLugares] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [usuario, setUsuario] = useState(null);
+  
+  // Estados para el modal de reseña
+  const [modalVisible, setModalVisible] = useState(false);
+  const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
+  const [textoResena, setTextoResena] = useState('');
+  const [calificacion, setCalificacion] = useState(0);
+  const [enviandoResena, setEnviandoResena] = useState(false);
 
   useEffect(() => {
     cargarDatos();
@@ -32,297 +26,410 @@ export default function LugaresPage() {
       const userInfo = await API.getUserInfo();
       setUsuario(userInfo);
       
-      const data = await API.getTouristLocations();
-      setLugares(data);
+      const lugaresData = await API.getTouristLocations();
+      setLugares(Array.isArray(lugaresData) ? lugaresData : []);
     } catch (error) {
       console.error('Error cargando lugares:', error);
-      Alert.alert("Error", "No se pudieron cargar los lugares turísticos");
+      Alert.alert("Error", "No se pudieron cargar los lugares");
+      setLugares([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleFavorito = async (lugarId) => {
+  const agregarFavorito = async (lugar) => {
+    try {
+      if (!usuario) {
+        Alert.alert("Error", "Debes iniciar sesión primero");
+        return;
+      }
+      
+      await API.addFavorite(lugar.id);
+      Alert.alert("¡Éxito!", `${lugar.nombre} agregado a favoritos`);
+    } catch (error) {
+      console.error('Error con favorito:', error);
+      Alert.alert("Error", error.message || "No se pudo agregar a favoritos");
+    }
+  };
+
+  const abrirModalResena = (lugar) => {
     if (!usuario) {
-      Alert.alert("Inicia sesión", "Debes iniciar sesión para guardar favoritos", [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Iniciar sesión", onPress: () => router.push('/login') }
-      ]);
+      Alert.alert("Error", "Debes iniciar sesión primero");
+      return;
+    }
+    
+    setLugarSeleccionado(lugar);
+    setTextoResena('');
+    setCalificacion(0);
+    setModalVisible(true);
+  };
+
+  const cerrarModal = () => {
+    setModalVisible(false);
+    setLugarSeleccionado(null);
+    setTextoResena('');
+    setCalificacion(0);
+  };
+
+  const enviarResena = async () => {
+    if (calificacion === 0) {
+      Alert.alert("Error", "Por favor selecciona una calificación");
+      return;
+    }
+    
+    if (!textoResena.trim()) {
+      Alert.alert("Error", "Por favor escribe tu reseña");
       return;
     }
 
+    setEnviandoResena(true);
+    
     try {
-      // Aquí deberías verificar si ya es favorito y hacer add o remove
-      await API.addFavorite(lugarId);
-      Alert.alert("Éxito", "Lugar agregado a favoritos");
+      await API.createReview(lugarSeleccionado.id, calificacion, textoResena.trim());
+      Alert.alert("¡Éxito!", "Tu reseña ha sido publicada");
+      cerrarModal();
     } catch (error) {
-      console.error('Error con favorito:', error);
-      Alert.alert("Error", "No se pudo agregar a favoritos");
+      console.error('Error creando reseña:', error);
+      Alert.alert("Error", error.message || "No se pudo crear la reseña");
+    } finally {
+      setEnviandoResena(false);
     }
+  };
+
+  const renderStars = (rating, onPress) => {
+    return (
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity key={star} onPress={() => onPress(star)}>
+            <Ionicons
+              name={star <= rating ? "star" : "star-outline"}
+              size={32}
+              color="#FFB800"
+              style={{ marginHorizontal: 4 }}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   };
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#ff6b00" />
-        <Text style={styles.loadingText}>Cargando lugares turísticos...</Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF6B35" />
+        <Text style={styles.loadingText}>Cargando lugares...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      
-      {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Lugares Turísticos</Text>
-          <Text style={styles.headerSubtitle}>{lugares.length} destinos disponibles</Text>
-        </View>
-        <View style={{width: 40}} />
+        <Text style={styles.headerTitle}>Lugares Turísticos</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* CONTENIDO */}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {lugares.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🏔️</Text>
-            <Text style={styles.emptyTitle}>No hay lugares disponibles</Text>
-            <Text style={styles.emptyText}>Vuelve más tarde para descubrir nuevos destinos</Text>
-          </View>
-        ) : (
-          lugares.map((lugar) => (
-            <TouchableOpacity 
-              key={lugar.id} 
-              style={styles.card}
-              activeOpacity={0.9}
-              onPress={() => Alert.alert(lugar.nombre, lugar.descripcion)}
-            >
-              <Image 
-                source={{ 
-                  uri: lugar.imagen_url || 'https://images.unsplash.com/photo-1568632234157-ce7aecd03d0d?auto=format&fit=crop&w=800&q=80' 
-                }} 
-                style={styles.cardImage} 
-              />
-              
-              {/* Botón Favorito */}
-              <TouchableOpacity 
-                style={styles.favoriteBtn}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  toggleFavorito(lugar.id);
-                }}
-              >
-                <Text style={styles.favoriteIcon}>🤍</Text>
-              </TouchableOpacity>
-
-              <View style={styles.cardContent}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{lugar.nombre}</Text>
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryText}>{lugar.categoria || 'General'}</Text>
-                  </View>
-                </View>
-                
-                <Text style={styles.cardDesc} numberOfLines={3}>
-                  {lugar.descripcion || 'Sin descripción disponible'}
-                </Text>
-
-                {/* Info adicional */}
-                {lugar.direccion && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoIcon}>📍</Text>
-                    <Text style={styles.infoText} numberOfLines={1}>{lugar.direccion}</Text>
-                  </View>
-                )}
-
-                {lugar.horario && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoIcon}>🕒</Text>
-                    <Text style={styles.infoText}>{lugar.horario}</Text>
-                  </View>
-                )}
-
-                <View style={styles.cardFooter}>
-                  <LinearGradient
-                    colors={['#ff6b00', '#ff8c00']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.btnDetails}
-                  >
-                    <Text style={styles.btnDetailsText}>Ver más →</Text>
-                  </LinearGradient>
-                </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {lugares.map((lugar) => (
+          <View key={lugar.id} style={styles.card}>
+            <Image 
+              source={{ uri: lugar.imagen_url }} 
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+            <View style={styles.cardContent}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{lugar.nombre}</Text>
+                <TouchableOpacity onPress={() => agregarFavorito(lugar)}>
+                  <Ionicons name="heart-outline" size={24} color="#FF6B35" />
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          ))
-        )}
+              
+              <Text style={styles.cardCategory}>{lugar.categoria}</Text>
+              <Text style={styles.cardDescription} numberOfLines={3}>
+                {lugar.descripcion}
+              </Text>
+              
+              <View style={styles.cardButtons}>
+                <TouchableOpacity style={styles.buttonPrimary}>
+                  <Text style={styles.buttonPrimaryText}>Ver más</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.buttonSecondary}
+                  onPress={() => abrirModalResena(lugar)}
+                >
+                  <Ionicons name="chatbox-outline" size={16} color="#FF6B35" />
+                  <Text style={styles.buttonSecondaryText}>Añadir Reseña</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ))}
       </ScrollView>
+
+      {/* Modal para crear reseña */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={cerrarModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Añadir Reseña</Text>
+              <TouchableOpacity onPress={cerrarModal}>
+                <Ionicons name="close" size={28} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {lugarSeleccionado && (
+              <>
+                <View style={styles.modalLugar}>
+                  <Image 
+                    source={{ uri: lugarSeleccionado.imagen_url }} 
+                    style={styles.modalImage}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.modalLugarNombre}>{lugarSeleccionado.nombre}</Text>
+                </View>
+
+                <Text style={styles.modalLabel}>Calificación</Text>
+                {renderStars(calificacion, setCalificacion)}
+
+                <Text style={styles.modalLabel}>Tu reseña</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Comparte tu experiencia..."
+                  multiline
+                  numberOfLines={4}
+                  value={textoResena}
+                  onChangeText={setTextoResena}
+                  maxLength={500}
+                />
+                <Text style={styles.charCounter}>{textoResena.length}/500</Text>
+
+                <TouchableOpacity 
+                  style={[styles.submitButton, enviandoResena && styles.submitButtonDisabled]}
+                  onPress={enviarResena}
+                  disabled={enviandoResena}
+                >
+                  {enviandoResena ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Publicar Reseña</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8fafc' 
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
   },
-  centerContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    padding: 40
-  },
-  loadingText: {
-    marginTop: 15,
-    color: '#718096',
-    fontSize: 14
-  },
-  
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: 20, 
-    paddingTop: 50, 
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    elevation: 2
-  },
-  backBtn: { padding: 5 },
-  backArrow: { fontSize: 24, color: '#2d3748' },
-  headerTitleContainer: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1a202c' },
-  headerSubtitle: { fontSize: 12, color: '#718096' },
-  
-  scrollContent: { 
-    padding: 20,
-    paddingBottom: 40
-  },
-  
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60
-  },
-  emptyIcon: {
-    fontSize: 60,
-    marginBottom: 20
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2d3748',
-    marginBottom: 10
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#718096',
-    textAlign: 'center'
-  },
-
-  card: { 
-    backgroundColor: 'white', 
-    borderRadius: 20, 
-    marginBottom: 25, 
-    overflow: 'hidden', 
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  cardImage: { 
-    width: '100%', 
-    height: 200 
-  },
-  favoriteBtn: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
-    backgroundColor: 'white',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  card: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  favoriteIcon: {
-    fontSize: 20
+  cardImage: {
+    width: '100%',
+    height: 200,
   },
-  cardContent: { 
-    padding: 20 
+  cardContent: {
+    padding: 16,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 10
+    marginBottom: 8,
   },
-  cardTitle: { 
-    fontSize: 20, 
-    fontWeight: '800', 
-    color: '#2d3748',
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
     flex: 1,
-    marginRight: 10
+    marginRight: 8,
   },
-  categoryBadge: {
-    backgroundColor: 'rgba(255, 107, 0, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+  cardCategory: {
+    fontSize: 14,
+    color: '#FF6B35',
+    fontWeight: '600',
+    marginBottom: 8,
   },
-  categoryText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ff6b00',
-    textTransform: 'uppercase'
-  },
-  cardDesc: { 
-    fontSize: 14, 
-    color: '#718096', 
+  cardDescription: {
+    fontSize: 14,
+    color: '#666',
     lineHeight: 20,
-    marginBottom: 15
+    marginBottom: 16,
   },
-  infoRow: {
+  cardButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  buttonPrimary: {
+    flex: 1,
+    backgroundColor: '#FF6B35',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonPrimaryText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  buttonSecondary: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF6B35',
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8
+    justifyContent: 'center',
+    gap: 6,
   },
-  infoIcon: {
+  buttonSecondaryText: {
+    color: '#FF6B35',
     fontSize: 14,
-    marginRight: 8,
-    width: 20
+    fontWeight: '600',
   },
-  infoText: {
-    fontSize: 13,
-    color: '#4a5568',
-    flex: 1
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
-  cardFooter: {
-    marginTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 15
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
   },
-  btnDetails: {
-    paddingVertical: 12,
-    borderRadius: 12,
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 2
+    marginBottom: 20,
   },
-  btnDetailsText: {
-    color: 'white',
-    fontWeight: '700',
-    fontSize: 14
-  }
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalLugar: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  modalLugarNombre: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+  modalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  charCounter: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  submitButton: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#CCC',
+  },
+  submitButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

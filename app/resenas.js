@@ -1,27 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Image, 
-  TouchableOpacity, 
-  StatusBar,
-  Dimensions,
-  ActivityIndicator,
-  Alert
-} from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as API from '../services/api';
-
-const { width } = Dimensions.get('window');
 
 export default function ResenasPage() {
   const router = useRouter();
-  
-  const [loading, setLoading] = useState(true);
   const [resenas, setResenas] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [usuario, setUsuario] = useState(null);
 
   useEffect(() => {
@@ -35,111 +21,102 @@ export default function ResenasPage() {
       
       if (userInfo) {
         const reviews = await API.getMyReviews();
-        setResenas(reviews);
+        console.log('✅ Reseñas cargadas:', reviews);
+        setResenas(Array.isArray(reviews) ? reviews : []);
       }
     } catch (error) {
       console.error('Error cargando reseñas:', error);
       Alert.alert("Error", "No se pudieron cargar las reseñas");
+      setResenas([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const formatearFecha = (fechaString) => {
-    const opciones = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(fechaString).toLocaleDateString('es-ES', opciones);
+  const renderStars = (calificacion) => {
+    return (
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Ionicons
+            key={star}
+            name={star <= calificacion ? "star" : "star-outline"}
+            size={16}
+            color="#FFB800"
+          />
+        ))}
+      </View>
+    );
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF6B35" />
+        <Text style={styles.loadingText}>Cargando reseñas...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      
-      {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerSubtitle}>TU DIARIO DE VIAJES</Text>
-          <Text style={styles.headerTitle}>Mis Reseñas</Text>
-        </View>
-        <View style={{width: 40}} /> 
+        <Text style={styles.headerTitle}>Mis Reseñas</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* CONTENIDO */}
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#ff6b00" />
-          <Text style={styles.loadingText}>Recuperando tus experiencias...</Text>
-        </View>
-      ) : !usuario ? (
-        // NO LOGUEADO
-        <View style={styles.centerContainer}>
-          <Text style={styles.iconLarge}>🔒</Text>
-          <Text style={styles.stateTitle}>Acceso Restringido</Text>
-          <Text style={styles.stateText}>Inicia sesión para acceder a tu historial de reseñas.</Text>
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/login')}>
-            <Text style={styles.btnText}>Iniciar Sesión</Text>
-          </TouchableOpacity>
-        </View>
-      ) : resenas.length === 0 ? (
-        // SIN RESEÑAS
-        <View style={styles.centerContainer}>
-          <Text style={styles.iconLarge}>🔭</Text>
-          <Text style={styles.stateTitle}>Aún no hay historias</Text>
-          <Text style={styles.stateText}>¡Explora lugares y comparte tu experiencia con la comunidad!</Text>
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/lugares')}>
-            <Text style={styles.btnText}>Explorar Lugares</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        // LISTA DE RESEÑAS
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {resenas.map((item) => (
-            <View key={item.id} style={styles.card}>
-              {/* Header de la Tarjeta */}
-              <View style={styles.cardHeader}>
-                <Image 
-                  source={{ 
-                    uri: item.lugar_imagen || 'https://images.unsplash.com/photo-1568632234157-ce7aecd03d0d?auto=format&fit=crop&w=800&q=80' 
-                  }} 
-                  style={styles.placeImage} 
-                />
-                <View style={styles.headerInfo}>
-                  <Text style={styles.placeName}>{item.lugar_nombre || 'Lugar desconocido'}</Text>
-                  <Text style={styles.reviewDate}>{formatearFecha(item.created_at)}</Text>
-                </View>
-                <View style={styles.badgeContainer}>
-                  <Text style={styles.badgeText}>Visitado</Text>
-                </View>
-              </View>
-
-              {/* Cuerpo de la Reseña */}
-              <View style={styles.cardBody}>
-                {/* Estrellas */}
-                <View style={styles.ratingContainer}>
-                  {[...Array(5)].map((_, i) => (
-                    <Text key={i} style={[styles.star, i < item.calificacion ? styles.starFilled : styles.starEmpty]}>
-                      ★
-                    </Text>
-                  ))}
-                  <Text style={styles.ratingNumber}>{item.calificacion}/5</Text>
-                </View>
-
-                {/* Texto */}
-                <View style={styles.textContainer}>
-                  <Text style={styles.quoteMark}>"</Text>
-                  <Text style={styles.reviewText}>{item.texto}</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-          
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>© 2025 PachaQutec Mobile</Text>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {resenas.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="chatbox-outline" size={80} color="#CCC" />
+            <Text style={styles.emptyText}>No tienes reseñas aún</Text>
+            <Text style={styles.emptySubtext}>Visita lugares y comparte tu experiencia</Text>
+            <TouchableOpacity 
+              style={styles.exploreButton}
+              onPress={() => router.push('/lugares')}
+            >
+              <Text style={styles.exploreButtonText}>Explorar Lugares</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      )}
+        ) : (
+          <View style={styles.reviewsList}>
+            {resenas.map((item) => (
+              <View key={item.id} style={styles.reviewCard}>
+                <View style={styles.reviewHeader}>
+                  <Image 
+                    source={{ uri: item.lugar_imagen }} 
+                    style={styles.reviewImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.reviewInfo}>
+                    <Text style={styles.reviewLugar} numberOfLines={2}>
+                      {item.lugar_nombre}
+                    </Text>
+                    {renderStars(item.calificacion)}
+                    <Text style={styles.reviewDate}>
+                      {new Date(item.created_at).toLocaleDateString('es-ES')}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.reviewText}>{item.texto}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+
+      <TouchableOpacity
+        style={styles.fabButton}
+        onPress={() => Alert.alert(
+          "Crear Reseña",
+          "Ve a la pantalla de Lugares y selecciona un lugar para dejar tu reseña.",
+          [{ text: "Entendido" }]
+        )}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -147,163 +124,138 @@ export default function ResenasPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F5F5F5',
   },
-  
-  header: {
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    backgroundColor: 'white',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  backBtn: { padding: 5, marginRight: 15 },
-  backArrow: { fontSize: 24, color: '#2d3748' },
-  headerTitleContainer: { flex: 1, alignItems: 'center' },
-  headerSubtitle: { fontSize: 10, fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', letterSpacing: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1a202c' },
-
-  centerContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    backgroundColor: '#F5F5F5',
   },
-  loadingText: { marginTop: 15, color: '#718096' },
-  iconLarge: { fontSize: 60, marginBottom: 20 },
-  stateTitle: { fontSize: 22, fontWeight: '700', color: '#2d3748', marginBottom: 10 },
-  stateText: { textAlign: 'center', color: '#718096', marginBottom: 30, lineHeight: 22 },
-  btnPrimary: {
-    backgroundColor: '#ff6b00',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 25,
-    elevation: 3,
-    shadowColor: '#ff6b00',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
-  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  
-  cardHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 16,
+    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
+    borderBottomColor: '#E0E0E0',
   },
-  placeImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
-    marginRight: 12,
+  backButton: {
+    padding: 8,
   },
-  headerInfo: {
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  scrollView: {
     flex: 1,
   },
-  placeName: {
+  scrollContent: {
+    padding: 16,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  exploreButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  exploreButtonText: {
+    color: '#FFF',
     fontSize: 16,
-    fontWeight: '700',
-    color: '#2d3436',
-    marginBottom: 2,
+    fontWeight: '600',
+  },
+  reviewsList: {
+    gap: 16,
+  },
+  reviewCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  reviewImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  reviewInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  reviewLugar: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    marginVertical: 4,
   },
   reviewDate: {
     fontSize: 12,
-    color: '#94a3b8',
-  },
-  badgeContainer: {
-    backgroundColor: '#f0fdf4',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#dcfce7',
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#15803d',
-    textTransform: 'uppercase',
-  },
-
-  cardBody: {
-    padding: 20,
-    paddingTop: 15,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  star: {
-    fontSize: 18,
-    marginRight: 2,
-  },
-  starFilled: { color: '#fbbf24' },
-  starEmpty: { color: '#e2e8f0' },
-  ratingNumber: {
-    marginLeft: 8,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748b',
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  
-  textContainer: {
-    flexDirection: 'row',
-  },
-  quoteMark: {
-    fontSize: 40,
-    color: '#ffedd5',
-    position: 'absolute',
-    top: -15,
-    left: -10,
-    zIndex: -1,
+    color: '#999',
+    marginTop: 4,
   },
   reviewText: {
     fontSize: 14,
-    lineHeight: 22,
-    color: '#334155',
-    fontStyle: 'italic',
+    color: '#666',
+    lineHeight: 20,
   },
-
-  footer: {
+  fabButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF6B35',
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
-  footerText: {
-    color: '#cbd5e1',
-    fontSize: 12,
-  }
+  fabText: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
 });
