@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+// Importamos la API real del backend
 import * as API from '../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -23,43 +24,52 @@ const { width, height } = Dimensions.get('window');
 export default function Login() {
   const router = useRouter();
   
+  // Estados
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [recordarSesion, setRecordarSesion] = useState(false);
 
+  // --- LÓGICA DE CONEXIÓN CON EL BACKEND ---
   const handleLogin = async () => {
+    // 1. Validaciones básicas
     if (!email || !password) {
       Alert.alert("Faltan datos", "Por favor ingresa tu correo y contraseña.");
       return;
     }
   
+    // 2. Activar estado de carga
     setIsLoading(true);
     
     try {
+      // 3. Petición real al servidor C++
+      console.log("Intentando login con:", email);
       const response = await API.login(email, password);
       
+      // 4. Manejo de la respuesta
       if (response.success) {
-        // Redirigir al ForYou
-        router.push('/foryou');
+        // Login Exitoso
+        Alert.alert("¡Bienvenido!", `Hola ${response.usuario?.nombre || 'Viajero'}`, [
+          { text: "Entrar", onPress: () => router.push('/foryou') }
+        ]);
       } else {
-        Alert.alert("Error de acceso", response.message || "Credenciales incorrectas.");
+        // Error de credenciales
+        Alert.alert("Error de acceso", response.message || "Correo o contraseña incorrectos.");
       }
     } catch (error) {
-      Alert.alert("Error de conexión", "No se pudo conectar con el servidor.");
+      Alert.alert("Error de conexión", "No se pudo conectar con el servidor. Verifica tu internet.");
+      console.error('Login error:', error);
     } finally {
+      // 5. Desactivar carga
       setIsLoading(false);
     }
-  };
-
-  const handleSocialLogin = (provider) => {
-    Alert.alert("Próximamente", `El inicio con ${provider} estará disponible pronto.`);
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       
+      {/* FONDO VISUAL */}
       <ImageBackground
         source={{ uri: 'https://images.unsplash.com/photo-1582489720279-db8b8a6b8a7a?auto=format&fit=crop&w=2000&q=80' }}
         style={styles.backgroundImage}
@@ -75,8 +85,10 @@ export default function Login() {
         >
           <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             
+            {/* TARJETA PRINCIPAL */}
             <View style={styles.card}>
               
+              {/* HEADER / LOGO */}
               <View style={styles.header}>
                 <View style={styles.logoContainer}>
                   <LinearGradient
@@ -92,8 +104,10 @@ export default function Login() {
                 <Text style={styles.subtitle}>Ingresa a tu cuenta para continuar</Text>
               </View>
 
+              {/* FORMULARIO */}
               <View style={styles.form}>
                 
+                {/* Email Input */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Correo electrónico</Text>
                   <View style={styles.inputWrapper}>
@@ -111,6 +125,7 @@ export default function Login() {
                   </View>
                 </View>
 
+                {/* Password Input */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Contraseña</Text>
                   <View style={styles.inputWrapper}>
@@ -127,6 +142,7 @@ export default function Login() {
                   </View>
                 </View>
 
+                {/* Opciones */}
                 <View style={styles.optionsRow}>
                   <TouchableOpacity 
                     style={styles.rememberMe} 
@@ -144,6 +160,7 @@ export default function Login() {
                   </TouchableOpacity>
                 </View>
 
+                {/* BOTÓN LOGIN PRINCIPAL */}
                 <TouchableOpacity 
                   onPress={handleLogin} 
                   activeOpacity={0.8} 
@@ -164,32 +181,10 @@ export default function Login() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>o continúa con</Text>
-                  <View style={styles.dividerLine} />
-                </View>
+                {/* ESPACIO EXTRA (Ya no hay botones sociales) */}
+                <View style={{ marginBottom: 20 }} />
 
-                <View style={styles.socialContainer}>
-                  <TouchableOpacity 
-                    style={[styles.socialBtn, styles.googleBtn]} 
-                    onPress={() => handleSocialLogin('Google')}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.socialIcon}>G</Text>
-                    <Text style={styles.googleText}>Google</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.socialBtn, styles.facebookBtn]}
-                    onPress={() => handleSocialLogin('Facebook')}
-                    disabled={isLoading}
-                  >
-                    <Text style={[styles.socialIcon, { color: 'white' }]}>f</Text>
-                    <Text style={styles.facebookText}>Facebook</Text>
-                  </TouchableOpacity>
-                </View>
-
+                {/* Footer Link */}
                 <View style={styles.footerCard}>
                   <Text style={styles.footerText}>¿No tienes una cuenta?</Text>
                   <TouchableOpacity 
@@ -247,18 +242,6 @@ const styles = StyleSheet.create({
   loginBtnContainer: { borderRadius: 12, overflow: 'hidden', shadowColor: '#FF6B00', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
   loginBtn: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   loginBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#E2E8F0' },
-  dividerText: { paddingHorizontal: 10, color: '#718096', fontSize: 12 },
-
-  socialContainer: { flexDirection: 'row', gap: 15, marginBottom: 20 },
-  socialBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8, borderWidth: 1, gap: 8 },
-  googleBtn: { backgroundColor: 'white', borderColor: '#E2E8F0' },
-  facebookBtn: { backgroundColor: '#1877F2', borderColor: '#1877F2' },
-  googleText: { color: '#1A202C', fontWeight: '600' },
-  facebookText: { color: 'white', fontWeight: '600' },
-  socialIcon: { fontSize: 16, fontWeight: 'bold' },
 
   footerCard: { alignItems: 'center', paddingTop: 15, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   footerText: { color: '#718096', fontSize: 14, marginBottom: 10 },
