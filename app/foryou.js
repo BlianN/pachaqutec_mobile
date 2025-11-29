@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,10 @@ import {
   Alert,
   Modal,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  FlatList,           // NUEVO: Para la lista de mensajes
+  KeyboardAvoidingView, // NUEVO: Para que el teclado no tape el chat
+  Platform            // NUEVO: Para detectar si es iOS o Android
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +26,7 @@ const { width } = Dimensions.get('window');
 export default function ForYouPage() {
   const router = useRouter();
   
-  // --- ESTADOS ---
+  // --- ESTADOS EXISTENTES ---
   const [usuario, setUsuario] = useState(null);
   const [lugares, setLugares] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +41,14 @@ export default function ForYouPage() {
 
   // Estados para Favoritos
   const [favoritosIds, setFavoritosIds] = useState(new Set());
+
+  // --- NUEVOS ESTADOS PARA EL CHATBOT ---
+  const [chatVisible, setChatVisible] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([
+    { id: 1, text: "¡Hola! 👋 Soy PachaBot. ¿En qué puedo ayudarte hoy sobre Arequipa?", sender: 'bot' }
+  ]);
+  const flatListRef = useRef(null); // Para hacer scroll automático al último mensaje
 
   // --- CARGA INICIAL ---
   useEffect(() => {
@@ -74,13 +85,11 @@ export default function ForYouPage() {
     }
   };
 
-  // --- AGRUPACIÓN DINÁMICA (Aquí está la magia) ---
+  // --- AGRUPACIÓN DINÁMICA ---
   const lugaresPorCategoria = useMemo(() => {
     const grupos = {};
     lugares.forEach(lugar => {
-      // Si el backend dice "Religioso", crea esa categoría
       const catNombre = lugar.categoria || "General";
-      
       if (!grupos[catNombre]) {
         grupos[catNombre] = [];
       }
@@ -89,21 +98,21 @@ export default function ForYouPage() {
     return grupos;
   }, [lugares]);
 
-  // --- HELPER DE ICONOS INTELIGENTE ---
+  // --- HELPER DE ICONOS ---
   const getCategoryIcon = (nombreCategoria) => {
     const cat = nombreCategoria.toLowerCase();
     if (cat.includes('gastr') || cat.includes('comida')) return '🍲';
     if (cat.includes('avent') || cat.includes('deport')) return '🧗';
     if (cat.includes('hist') || cat.includes('arq')) return '🏛️';
-    if (cat.includes('relig') || cat.includes('iglesia')) return '⛪'; // Catedrales
-    if (cat.includes('mirador') || cat.includes('vista')) return '🔭'; // Yanahuara
-    if (cat.includes('natur') || cat.includes('camp')) return '🌿';    // Campiña
-    if (cat.includes('cult') || cat.includes('museo')) return '🎭';    // Museos
-    if (cat.includes('noct') || cat.includes('fiesta')) return '🍸';   // Vida nocturna
-    return '🌎'; // Default para otros
+    if (cat.includes('relig') || cat.includes('iglesia')) return '⛪';
+    if (cat.includes('mirador') || cat.includes('vista')) return '🔭';
+    if (cat.includes('natur') || cat.includes('camp')) return '🌿';
+    if (cat.includes('cult') || cat.includes('museo')) return '🎭';
+    if (cat.includes('noct') || cat.includes('fiesta')) return '🍸';
+    return '🌎';
   };
 
-  // --- ACCIONES ---
+  // --- ACCIONES GENERALES ---
   const handleLogout = async () => {
     Alert.alert("Cerrar Sesión", "¿Seguro que quieres salir?", [
       { text: "Cancelar", style: "cancel" },
@@ -136,6 +145,7 @@ export default function ForYouPage() {
     }
   };
 
+  // --- ACCIONES DE RESEÑA ---
   const abrirModalResena = (lugar) => {
     if (!usuario) {
         Alert.alert("Atención", "Inicia sesión para escribir reseñas.");
@@ -162,6 +172,48 @@ export default function ForYouPage() {
     } finally {
         setEnviandoResena(false);
     }
+  };
+
+  // --- LÓGICA DEL CHATBOT (NUEVO) ---
+  const handleSendChat = () => {
+    if (!chatInput.trim()) return;
+
+    const userMsg = { id: Date.now(), text: chatInput, sender: 'user' };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput("");
+
+    // Simulación de respuesta del bot
+    setTimeout(() => {
+        const botResponses = [
+            "¡Qué interesante! Arequipa tiene mucho que ofrecer.",
+            "Te recomiendo visitar el Cañón del Colca, es impresionante.",
+            "Para comer, no puedes perderte un buen Adobo Arequipeño.",
+            "¿Has visitado ya el Monasterio de Santa Catalina?",
+            "Soy un bot en entrenamiento, pero pronto sabré todo sobre la ciudad blanca 🗻"
+        ];
+        const randomResp = botResponses[Math.floor(Math.random() * botResponses.length)];
+        
+        const botMsg = { id: Date.now() + 1, text: randomResp, sender: 'bot' };
+        setChatMessages(prev => [...prev, botMsg]);
+    }, 1000);
+  };
+
+  // Renderizador de mensajes del chat
+  const renderChatMessage = ({ item }) => {
+    const isBot = item.sender === 'bot';
+    return (
+        <View style={[
+            styles.chatBubble, 
+            isBot ? styles.chatBubbleBot : styles.chatBubbleUser
+        ]}>
+            <Text style={[
+                styles.chatText,
+                isBot ? styles.chatTextBot : styles.chatTextUser
+            ]}>
+                {item.text}
+            </Text>
+        </View>
+    );
   };
 
   const renderStars = () => (
@@ -275,7 +327,6 @@ export default function ForYouPage() {
                     {/* Cabecera de Categoría */}
                     <View style={styles.catHeader}>
                         <View style={styles.catInfo}>
-                            {/* Icono Inteligente */}
                             <View style={styles.catIcon}>
                                 <Text style={{fontSize: 22}}>
                                     {getCategoryIcon(categoria)}
@@ -299,7 +350,6 @@ export default function ForYouPage() {
                                 style={styles.placeCard}
                                 activeOpacity={0.9}
                                 onPress={() => {
-                                    // Enviamos el filtro correcto a la página de lugares
                                     router.push({ 
                                       pathname: '/lugares', 
                                       params: { 
@@ -348,18 +398,18 @@ export default function ForYouPage() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ASISTENTE FLOTANTE */}
+      {/* ASISTENTE FLOTANTE (Ahora abre el chat) */}
       <TouchableOpacity 
         style={styles.fab}
         activeOpacity={0.8}
-        onPress={() => Alert.alert("PachaBot", "¡Hola! Soy tu asistente virtual de Arequipa. Pronto estaré listo para chatear.")}
+        onPress={() => setChatVisible(true)}
       >
         <LinearGradient colors={['#ff6b00', '#ff9100']} style={styles.fabGradient}>
             <Ionicons name="chatbubble-ellipses" size={28} color="white" />
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* MODAL DE RESEÑA */}
+      {/* --- MODAL DE RESEÑA --- */}
       <Modal
         visible={modalResenaVisible}
         transparent={true}
@@ -411,6 +461,63 @@ export default function ForYouPage() {
                     </TouchableOpacity>
                 </View>
             </View>
+        </View>
+      </Modal>
+
+      {/* --- MODAL DEL CHATBOT (NUEVO) --- */}
+      <Modal
+        visible={chatVisible}
+        animationType="slide"
+        presentationStyle="pageSheet" // Estilo moderno en iOS
+        onRequestClose={() => setChatVisible(false)}
+      >
+        <View style={styles.chatContainer}>
+            {/* Header del Chat */}
+            <LinearGradient colors={['#FF6B00', '#FF8F00']} style={styles.chatHeader}>
+                <View style={styles.chatHeaderContent}>
+                    <View style={styles.botAvatar}>
+                        <Ionicons name="logo-android" size={24} color="#FF6B00" />
+                    </View>
+                    <View>
+                        <Text style={styles.chatTitle}>PachaBot</Text>
+                        <Text style={styles.chatStatus}>En línea</Text>
+                    </View>
+                </View>
+                <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.closeChatBtn}>
+                    <Ionicons name="close" size={26} color="white" />
+                </TouchableOpacity>
+            </LinearGradient>
+
+            {/* Lista de Mensajes */}
+            <FlatList
+                ref={flatListRef}
+                data={chatMessages}
+                keyExtractor={item => item.id.toString()}
+                renderItem={renderChatMessage}
+                contentContainerStyle={styles.chatListContent}
+                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            />
+
+            {/* Input con KeyboardAvoidingView */}
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === "ios" ? "padding" : "height"} 
+                keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+            >
+                <View style={styles.chatInputContainer}>
+                    <TextInput
+                        style={styles.chatInput}
+                        placeholder="Escribe tu mensaje..."
+                        value={chatInput}
+                        onChangeText={setChatInput}
+                        returnKeyType="send"
+                        onSubmitEditing={handleSendChat}
+                    />
+                    <TouchableOpacity style={styles.sendBtn} onPress={handleSendChat}>
+                        <Ionicons name="send" size={20} color="white" />
+                    </TouchableOpacity>
+                </View>
+            </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -487,7 +594,7 @@ const styles = StyleSheet.create({
   fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, shadowColor:'#FF6B00', shadowOpacity:0.4, shadowRadius:10, elevation:10 },
   fabGradient: { width: '100%', height: '100%', borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
 
-  // MODAL
+  // MODAL RESEÑA
   modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding: 20 },
   modalCard: { backgroundColor:'white', borderRadius: 20, padding: 25 },
   modalHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 15 },
@@ -500,4 +607,27 @@ const styles = StyleSheet.create({
   btnCancelText: { color:'#4A5568', fontWeight:'600' },
   btnSubmit: { flex:1, padding: 12, backgroundColor:'#667EEA', borderRadius: 10, alignItems:'center' },
   btnSubmitText: { color:'white', fontWeight:'600' },
+
+  // --- STYLES CHATBOT (NUEVO) ---
+  chatContainer: { flex: 1, backgroundColor: '#F8FAFC' },
+  chatHeader: { paddingVertical: 15, paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 50 : 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chatHeaderContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  botAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' },
+  chatTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  chatStatus: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
+  closeChatBtn: { padding: 5 },
+  
+  chatListContent: { padding: 20, gap: 15, paddingBottom: 20 },
+  
+  chatBubble: { maxWidth: '80%', padding: 15, borderRadius: 20, marginBottom: 2 },
+  chatBubbleBot: { backgroundColor: 'white', borderBottomLeftRadius: 4, alignSelf: 'flex-start', shadowColor:'#000', shadowOpacity:0.05, shadowRadius:5, elevation:2 },
+  chatBubbleUser: { backgroundColor: '#FF6B00', borderBottomRightRadius: 4, alignSelf: 'flex-end' },
+  
+  chatText: { fontSize: 15, lineHeight: 22 },
+  chatTextBot: { color: '#2D3748' },
+  chatTextUser: { color: 'white' },
+  
+  chatInputContainer: { flexDirection: 'row', padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#E2E8F0', alignItems: 'center', gap: 10 },
+  chatInput: { flex: 1, backgroundColor: '#F7FAFC', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 10, fontSize: 16, borderWidth: 1, borderColor: '#EDF2F7', maxHeight: 100 },
+  sendBtn: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#FF6B00', alignItems: 'center', justifyContent: 'center' }
 });
