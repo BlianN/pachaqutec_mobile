@@ -114,7 +114,7 @@ export default function ForYouPage() {
           {/* Botón RDF (Morado) */}
           <TouchableOpacity 
             style={[styles.navItem, styles.btnRDF]} 
-            onPress={() => Alert.alert("Próximamente", "El visualizador RDF estará disponible pronto")}
+            onPress={() => handleNavigation('RDF', '/rdfviewer')}
           >
             <Ionicons name="globe-outline" size={16} color="white" style={{marginRight: 4}} />
             <Text style={styles.textRDF}>RDF</Text>

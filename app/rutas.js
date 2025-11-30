@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -9,11 +9,15 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  Platform
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
+
+// 🔑 API Key de Google Maps (la misma de app.json)
+const GOOGLE_MAPS_API_KEY = 'AIzaSyDfDlq1x8pnoUHJYVs8X_fSZVVESaCm_Dk';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,20 +28,47 @@ const AREQUIPA_CENTER = {
   longitudeDelta: 0.02,
 };
 
-// Lugares hardcodeados (después puedes conectar con API)
+// Lugares de Arequipa - Base de datos actualizada
 const LUGARES_DATA = [
-  { id: 1, nombre: 'Plaza de Armas', categoria: 'Histórico', lat: -16.398866, lng: -71.536961 },
-  { id: 2, nombre: 'Monasterio Santa Catalina', categoria: 'Histórico', lat: -16.396067, lng: -71.536600 },
-  { id: 3, nombre: 'Mirador de Yanahuara', categoria: 'Mirador', lat: -16.387572, lng: -71.541974 },
-  { id: 4, nombre: 'Mundo Alpaca', categoria: 'Cultura', lat: -16.392918, lng: -71.535439 },
-  { id: 5, nombre: 'Mercado San Camilo', categoria: 'Gastronomía', lat: -16.402852, lng: -71.534973 },
+  // Aventura
+  { id: 1, nombre: 'Canopy y Tirolesa', categoria: 'Aventura', lat: -16.359184, lng: -71.540737 },
+  { id: 2, nombre: 'Rafting en río Chili', categoria: 'Aventura', lat: -16.355781286189146, lng: -71.54193641029562 },
+  
+  // Histórico
+  { id: 3, nombre: 'Monasterio de Santa Catalina', categoria: 'Histórico', lat: -16.396068, lng: -71.536601 },
+  { id: 4, nombre: 'Plaza de Armas', categoria: 'Histórico', lat: -16.398866, lng: -71.536961 },
+  { id: 5, nombre: 'Barrio de San Lázaro', categoria: 'Histórico', lat: -16.393323, lng: -71.533883 },
+  { id: 6, nombre: 'Casa del Moral', categoria: 'Histórico', lat: -16.396803, lng: -71.537751 },
+  
+  // Religioso
+  { id: 7, nombre: 'Catedral de Arequipa', categoria: 'Religioso', lat: -16.398111650506294, lng: -71.53669551721907 },
+  { id: 8, nombre: 'Iglesia de la Compañía', categoria: 'Religioso', lat: -16.393751, lng: -71.533171 },
+  { id: 9, nombre: 'Convento de Santa Teresa', categoria: 'Religioso', lat: -16.39622242687977, lng: -71.53103760600597 },
+  
+  // Cultural
+  { id: 10, nombre: 'Museo Santuarios Andinos', categoria: 'Cultural', lat: -16.399935, lng: -71.537752 },
+  { id: 11, nombre: 'Casa Museo Mario Vargas Llosa', categoria: 'Cultural', lat: -16.406356648679385, lng: -71.54080754091886 },
+  { id: 12, nombre: 'Mirador de Yanahuara', categoria: 'Cultural', lat: -16.38743925802195, lng: -71.54172877180314 },
+  
+  // Gastronomía
+  { id: 13, nombre: 'Mercado San Camilo', categoria: 'Gastronomía', lat: -16.403022, lng: -71.534986 },
+  { id: 14, nombre: 'Picanterías Tradicionales', categoria: 'Gastronomía', lat: -16.395308228223524, lng: -71.53531926309206 },
+  
+  // Naturaleza
+  { id: 15, nombre: 'Volcán Misti', categoria: 'Naturaleza', lat: -16.298723, lng: -71.405672 },
+  { id: 16, nombre: 'Cañón del Colca', categoria: 'Naturaleza', lat: -15.610850, lng: -71.906478 },
+  { id: 17, nombre: 'Valle de los Volcanes', categoria: 'Naturaleza', lat: -15.537611, lng: -72.301534 },
+  { id: 18, nombre: 'Reserva Nacional Salinas y Aguada Blanca', categoria: 'Naturaleza', lat: -16.367749, lng: -71.135861 },
 ];
 
 const CATEGORIAS = [
-  { id: 'todos', nombre: 'Todos', icono: '🌎' },
-  { id: 'Histórico', nombre: 'Histórico', icono: '🏛️' },
+  { id: 'todos', nombre: 'Todos', icono: '' },
   { id: 'Aventura', nombre: 'Aventura', icono: '🧗' },
-  { id: 'Gastronomía', nombre: 'Comida', icono: '🍲' },
+  { id: 'Histórico', nombre: 'Histórico', icono: '🏛️' },
+  { id: 'Religioso', nombre: 'Religioso', icono: '⛪' },
+  { id: 'Cultural', nombre: 'Cultural', icono: '�' },
+  { id: 'Gastronomía', nombre: 'Comida', icono: '�' },
+  { id: 'Naturaleza', nombre: 'Naturaleza', icono: '🏔️' },
 ];
 
 export default function RutasPage() {
@@ -48,8 +79,84 @@ export default function RutasPage() {
   const [filtroCat, setFiltroCat] = useState("todos");
   const [lugaresRuta, setLugaresRuta] = useState([]);
   const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
+  const [lugaresData, setLugaresData] = useState(LUGARES_DATA); // 🔥 Usar datos locales
+  const [loading, setLoading] = useState(false);
+  const [rutaCoords, setRutaCoords] = useState([]); // Coordenadas de la ruta siguiendo calles
 
-  const lugaresFiltrados = LUGARES_DATA.filter(l => {
+  // Cargar ruta real cuando cambian los lugares seleccionados
+  useEffect(() => {
+    if (lugaresRuta.length >= 2) {
+      obtenerRutaReal();
+    } else {
+      setRutaCoords([]);
+    }
+  }, [lugaresRuta]);
+
+  // Obtener ruta usando Google Directions API
+  const obtenerRutaReal = async () => {
+    try {
+      // Crear waypoints intermedios
+      const origin = `${lugaresRuta[0].lat},${lugaresRuta[0].lng}`;
+      const destination = `${lugaresRuta[lugaresRuta.length - 1].lat},${lugaresRuta[lugaresRuta.length - 1].lng}`;
+      
+      let waypoints = '';
+      if (lugaresRuta.length > 2) {
+        const intermedios = lugaresRuta.slice(1, -1);
+        waypoints = intermedios.map(l => `${l.lat},${l.lng}`).join('|');
+      }
+
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const points = decodePolyline(data.routes[0].overview_polyline.points);
+        setRutaCoords(points);
+      } else {
+        console.warn('No se pudo obtener la ruta:', data.status);
+        // Fallback a línea recta
+        setRutaCoords(lugaresRuta.map(l => ({ latitude: l.lat, longitude: l.lng })));
+      }
+    } catch (error) {
+      console.error('Error al obtener ruta:', error);
+      // Fallback a línea recta
+      setRutaCoords(lugaresRuta.map(l => ({ latitude: l.lat, longitude: l.lng })));
+    }
+  };
+
+  // Decodificar polyline de Google (formato encoded)
+  const decodePolyline = (encoded) => {
+    const poly = [];
+    let index = 0, len = encoded.length;
+    let lat = 0, lng = 0;
+
+    while (index < len) {
+      let b, shift = 0, result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      poly.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+    }
+    return poly;
+  };
+
+  const lugaresFiltrados = lugaresData.filter(l => {
     const matchNombre = l.nombre.toLowerCase().includes(busqueda.toLowerCase());
     const matchCat = filtroCat === 'todos' || l.categoria === filtroCat;
     return matchNombre && matchCat;
@@ -79,7 +186,7 @@ export default function RutasPage() {
       return;
     }
     
-    const coordenadas = lugaresRuta.map(l => ({
+    const coordenadas = rutaCoords.length > 0 ? rutaCoords : lugaresRuta.map(l => ({
       latitude: l.lat,
       longitude: l.lng
     }));
@@ -107,20 +214,43 @@ export default function RutasPage() {
         showsUserLocation={true}
         showsCompass={true}
       >
-        {lugaresFiltrados.map(lugar => (
-          <Marker
-            key={lugar.id}
-            coordinate={{ latitude: lugar.lat, longitude: lugar.lng }}
-            title={lugar.nombre}
-            description={lugar.categoria}
-            onPress={() => setLugarSeleccionado(lugar)}
-            pinColor={lugaresRuta.find(l => l.id === lugar.id) ? '#FF6B00' : '#667eea'}
-          />
-        ))}
+        {/* Círculos en lugar de marcadores */}
+        {lugaresFiltrados.map(lugar => {
+          const enRuta = lugaresRuta.find(l => l.id === lugar.id);
+          return (
+            <React.Fragment key={lugar.id}>
+              {/* Círculo exterior (borde) */}
+              <Circle
+                center={{ latitude: lugar.lat, longitude: lugar.lng }}
+                radius={50}
+                fillColor={enRuta ? 'rgba(255, 107, 0, 0.3)' : 'rgba(102, 126, 234, 0.3)'}
+                strokeColor={enRuta ? '#FF6B00' : '#667eea'}
+                strokeWidth={3}
+              />
+              {/* Círculo interior (punto central) */}
+              <Circle
+                center={{ latitude: lugar.lat, longitude: lugar.lng }}
+                radius={15}
+                fillColor={enRuta ? '#FF6B00' : '#667eea'}
+                strokeColor="#FFF"
+                strokeWidth={2}
+              />
+              {/* Marcador invisible para detectar taps */}
+              <Marker
+                coordinate={{ latitude: lugar.lat, longitude: lugar.lng }}
+                title={lugar.nombre}
+                description={lugar.categoria}
+                onPress={() => setLugarSeleccionado(lugar)}
+                opacity={0}
+              />
+            </React.Fragment>
+          );
+        })}
 
-        {lugaresRuta.length >= 2 && (
+        {/* Ruta siguiendo calles reales */}
+        {rutaCoords.length >= 2 && (
           <Polyline
-            coordinates={lugaresRuta.map(l => ({ latitude: l.lat, longitude: l.lng }))}
+            coordinates={rutaCoords}
             strokeColor="#FF6B00"
             strokeWidth={4}
             lineDashPattern={[1]}
@@ -166,7 +296,7 @@ export default function RutasPage() {
         <View style={styles.panelHandle} />
         
         <View style={styles.rutaStatus}>
-          <Text style={styles.rutaCounter}>
+          <Text style={styles.listTitle}>
             {lugaresRuta.length} paradas seleccionadas
           </Text>
           {lugaresRuta.length > 0 && (
@@ -191,7 +321,7 @@ export default function RutasPage() {
           </View>
         )}
 
-        <Text style={styles.listTitle}>Lugares cercanos</Text>
+        <Text style={styles.listTitle}>Lugares</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesList}>
           {lugaresFiltrados.map(lugar => {
             const enRuta = lugaresRuta.find(l => l.id === lugar.id);
@@ -358,26 +488,73 @@ const styles = StyleSheet.create({
 
   listTitle: { fontSize: 16, fontWeight: 'bold', color: '#1a202c', marginBottom: 10 },
   placesList: { gap: 15, paddingRight: 20 },
-  
+
+
+  textoNegrita: {
+    fontWeight: 'bold',
+    fontSize: 18,
+    color: '#333',
+  },
+
   placeCard: {
-    width: 140,
-    height: 110,
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    width: 133, // 5% menor (140 - 7)
+    height: 104.5, // 5% menor (110 - 5.5)
+    backgroundColor: '#FF6B00', // Fondo naranja
+    borderRadius: 8,
+    padding: 11,
+    borderWidth: 0,
     justifyContent: 'space-between',
-    elevation: 2,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    // Recortes en las esquinas (forma de clip-path simulada con borde)
+    borderTopLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   placeCardActive: {
-    borderColor: '#FF6B00',
-    backgroundColor: '#fffaf0',
+    backgroundColor: '#FF8C00', // Naranja más claro cuando está activo
+    elevation: 5,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardCategory: { fontSize: 10, color: '#718096', backgroundColor: '#f7fafc', padding: 3, borderRadius: 5 },
-  addIcon: { fontSize: 18, color: '#cbd5e0', fontWeight: 'bold' },
-  addIconActive: { color: '#FF6B00' },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: '#2d3748' },
-  cardCoords: { fontSize: 9, color: '#a0aec0' },
+  cardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-start' 
+  },
+  cardCategory: { 
+    fontSize: 9, 
+    color: '#FFF', // Texto blanco para contraste
+    backgroundColor: 'rgba(0, 0, 0, 0.2)', 
+    padding: 3, 
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    fontWeight: '600',
+  },
+  addIcon: { 
+    fontSize: 22, // Más grande
+    color: '#1a1a1a', // Negro más oscuro
+    fontWeight: '900', // Más negrita
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    width: 28,
+    height: 28,
+    textAlign: 'center',
+    lineHeight: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  addIconActive: { 
+    color: '#000', // Negro total
+    backgroundColor: '#FFF',
+  },
+  cardTitle: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#FFF', // Texto blanco
+    lineHeight: 16,
+  },
+  cardCoords: { 
+    fontSize: 8, 
+    color: 'rgba(255, 255, 255, 0.7)', // Blanco semitransparente
+  },
 });

@@ -11,17 +11,32 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDfDlq1x8pnoUHJYVs8X_fSZVVESaCm_Dk"
+        }
+      }
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pachaqutec.app"
+      "bundleIdentifier": "com.pachaqutec.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyDfDlq1x8pnoUHJYVs8X_fSZVVESaCm_Dk"
+      }
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8165de7b-5fff-4cea-8821-b710c453db86"
+      }
     }
   }
 }
