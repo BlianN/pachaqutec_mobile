@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+// Importación correcta de la API
 import * as API from '../services/api';
 
 const { width } = Dimensions.get('window');
@@ -25,7 +27,7 @@ export default function ResenasPage() {
   const [resenas, setResenas] = useState([]);
   const [usuario, setUsuario] = useState(null);
 
-  // --- CARGAR DATOS AL ENTRAR ---
+  // --- CARGAR DATOS ---
   useFocusEffect(
     useCallback(() => {
       cargarDatos();
@@ -41,11 +43,8 @@ export default function ResenasPage() {
 
       // 2. Si hay usuario, cargar sus reseñas
       if (userInfo) {
-        // CORRECCIÓN AQUÍ: Usamos la función exacta de tu api.js
         const reviews = await API.getMyReviews(); 
-        console.log('✅ Reseñas cargadas:', reviews);
-        
-        // Aseguramos que sea un array
+        // Validamos que sea un array para evitar errores
         setResenas(Array.isArray(reviews) ? reviews : []);
       } else {
         setResenas([]);
@@ -66,67 +65,73 @@ export default function ResenasPage() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="white" />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* HEADER ESTÉTICO */}
+      {/* HEADER DARK */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#2d3748" />
+          <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerSubtitle}>TU DIARIO DE VIAJES</Text>
+          <Text style={styles.headerSubtitle}>DIARIO DE VIAJES</Text>
           <Text style={styles.headerTitle}>Mis Reseñas</Text>
         </View>
+        <View style={{width: 24}} /> 
       </View>
 
       {/* CONTENIDO PRINCIPAL */}
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#ff6b00" />
-          <Text style={styles.loadingText}>Recuperando tus experiencias...</Text>
+          <Text style={styles.loadingText}>Cargando...</Text>
         </View>
       ) : !usuario ? (
-        // --- ESTADO: NO LOGUEADO (CANDADO) ---
         <View style={styles.centerContainer}>
-          <Ionicons name="lock-closed-outline" size={80} color="#CBD5E0" style={{marginBottom: 20}} />
+          <Ionicons name="lock-closed-outline" size={80} color="#333" style={{marginBottom: 20}} />
           <Text style={styles.stateTitle}>Acceso Restringido</Text>
           <Text style={styles.stateText}>
-            Inicia sesión para acceder a tu historial de opiniones y contribuciones.
+            Inicia sesión para ver tu historial.
           </Text>
           <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/login')}>
             <Text style={styles.btnText}>Iniciar Sesión</Text>
           </TouchableOpacity>
         </View>
       ) : resenas.length === 0 ? (
-        // --- ESTADO: SIN RESEÑAS (BUZÓN VACÍO) ---
         <View style={styles.centerContainer}>
-          <Ionicons name="chatbubble-ellipses-outline" size={80} color="#CBD5E0" style={{marginBottom: 20}} />
-          <Text style={styles.stateTitle}>Aún no hay historias</Text>
+          <Ionicons name="chatbubble-ellipses-outline" size={80} color="#333" style={{marginBottom: 20}} />
+          <Text style={styles.stateTitle}>Sin Reseñas</Text>
           <Text style={styles.stateText}>
-            ¡Tu opinión vale oro! Explora lugares y comparte tu experiencia con la comunidad.
+            Tu opinión vale oro. Explora y comenta.
           </Text>
           <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push('/lugares')}>
             <Text style={styles.btnText}>Explorar Lugares</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        // --- LISTA DE RESEÑAS (TARJETAS) ---
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          <View style={styles.introContainer}>
+             <Text style={styles.introTitle}>Tu Historial</Text>
+             <Text style={styles.introSubtitle}>{resenas.length} aventuras compartidas</Text>
+          </View>
+
           {resenas.map((item) => (
             <View key={item.id} style={styles.card}>
               
-              {/* Header de la Tarjeta */}
+              {/* Header de la Tarjeta (Imagen del Lugar) */}
               <View style={styles.cardHeader}>
                 <Image 
-                  source={{ uri: item.lugar_imagen || 'https://via.placeholder.com/100' }} 
+                  source={{ uri: item.lugar_imagen || 'https://via.placeholder.com/150' }} 
                   style={styles.placeImage} 
                 />
-                <View style={styles.headerInfo}>
-                  <Text style={styles.placeName} numberOfLines={1}>{item.lugar_nombre}</Text>
-                  <Text style={styles.reviewDate}>{formatearFecha(item.created_at)}</Text>
+                <LinearGradient 
+                   colors={['transparent', 'rgba(0,0,0,0.8)']} 
+                   style={styles.imageOverlay} 
+                />
+                <View style={styles.placeInfoOverlay}>
+                   <Text style={styles.placeName} numberOfLines={1}>{item.lugar_nombre}</Text>
+                   <Text style={styles.reviewDate}>{formatearFecha(item.created_at)}</Text>
                 </View>
-                
-                {/* Badge Visitado */}
                 <View style={styles.badgeContainer}>
                   <Text style={styles.badgeText}>Visitado</Text>
                 </View>
@@ -135,20 +140,24 @@ export default function ResenasPage() {
               {/* Cuerpo de la Reseña */}
               <View style={styles.cardBody}>
                 {/* Estrellas */}
-                <View style={styles.ratingContainer}>
-                  {[...Array(5)].map((_, i) => (
-                    <Ionicons 
-                      key={i} 
-                      name={i < item.calificacion ? "star" : "star-outline"} 
-                      size={18} 
-                      color={i < item.calificacion ? "#FBBF24" : "#E2E8F0"}
-                      style={{ marginRight: 2 }}
-                    />
-                  ))}
-                  <Text style={styles.ratingNumber}>{item.calificacion}/5</Text>
+                <View style={styles.ratingRow}>
+                  <View style={styles.starsContainer}>
+                    {[...Array(5)].map((_, i) => (
+                        <Ionicons 
+                        key={i} 
+                        name={i < item.calificacion ? "star" : "star-outline"} 
+                        size={16} 
+                        color={i < item.calificacion ? "#ffd700" : "#444"}
+                        style={{ marginRight: 2 }}
+                        />
+                    ))}
+                  </View>
+                  <View style={styles.ratingPill}>
+                     <Text style={styles.ratingPillText}>{item.calificacion}/5</Text>
+                  </View>
                 </View>
 
-                {/* Texto con Comillas Decorativas */}
+                {/* Texto */}
                 <View style={styles.textContainer}>
                   <Text style={styles.quoteMark}>“</Text>
                   <Text style={styles.reviewText}>{item.texto}</Text>
@@ -163,7 +172,7 @@ export default function ResenasPage() {
         </ScrollView>
       )}
 
-      {/* BOTÓN FLOTANTE PARA AGREGAR NUEVA (Solo si hay usuario) */}
+      {/* BOTÓN FLOTANTE */}
       {usuario && (
         <TouchableOpacity
           style={styles.fabButton}
@@ -171,7 +180,7 @@ export default function ResenasPage() {
           onPress={() => {
             Alert.alert(
               "Nueva Reseña",
-              "Para escribir una reseña, ve a la sección Lugares y elige uno.",
+              "Ve a la sección Lugares y elige uno para opinar.",
               [
                 { text: "Cancelar", style: "cancel" },
                 { text: "Ir a Lugares", onPress: () => router.push('/lugares') }
@@ -179,195 +188,72 @@ export default function ResenasPage() {
             );
           }}
         >
-          <Ionicons name="add" size={32} color="white" />
+          <Ionicons name="add" size={30} color="white" />
         </TouchableOpacity>
       )}
     </View>
   );
 }
 
+// ESTILOS DARK PREMIUM
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#050505', // Fondo Negro
   },
   
   // HEADER
   header: {
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    backgroundColor: 'white',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: 50, paddingBottom: 15, paddingHorizontal: 20,
+    backgroundColor: 'rgba(15, 15, 15, 0.95)', borderBottomWidth: 1, borderBottomColor: '#333'
   },
-  backBtn: { padding: 5, marginRight: 15 },
-  headerTitleContainer: { flex: 1, alignItems: 'center', marginRight: 40 },
-  headerSubtitle: { fontSize: 10, fontWeight: '700', color: '#A0AEC0', textTransform: 'uppercase', letterSpacing: 1.2 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1A202C' },
+  backBtn: { padding: 8, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.1)' },
+  headerTitleContainer: { flex: 1, alignItems: 'center' },
+  headerSubtitle: { fontSize: 10, fontWeight: '700', color: '#ff6b00', textTransform: 'uppercase', letterSpacing: 1.5 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#a0a0a0' },
 
   // STATES
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: { marginTop: 15, color: '#718096', fontWeight: '500' },
-  stateTitle: { fontSize: 22, fontWeight: '700', color: '#2D3748', marginBottom: 10, textAlign: 'center' },
-  stateText: { textAlign: 'center', color: '#718096', marginBottom: 30, lineHeight: 24, fontSize: 15 },
-  btnPrimary: {
-    backgroundColor: '#FF6B00',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 30,
-    elevation: 4,
-    shadowColor: '#FF6B00',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-  },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  loadingText: { marginTop: 15, color: '#a0a0a0', fontWeight: '500' },
+  stateTitle: { fontSize: 22, fontWeight: '700', color: 'white', marginBottom: 10, textAlign: 'center' },
+  stateText: { textAlign: 'center', color: '#888', marginBottom: 30, lineHeight: 24, fontSize: 15 },
+  btnPrimary: { backgroundColor: '#ff6b00', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12, elevation: 4 },
   btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   // CONTENT
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 100, // Espacio para el FAB
-  },
+  scrollContent: { padding: 20, paddingBottom: 100 },
+  introContainer: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
+  introTitle: { fontSize: 24, fontWeight: '800', color: 'white', marginBottom: 5 },
+  introSubtitle: { fontSize: 14, color: '#a0a0a0' },
   
-  // CARD ESTILO PREMIUM
+  // CARD
   card: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    backgroundColor: '#121212', borderRadius: 20, marginBottom: 25, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#2a2a2a',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 5
   },
-  
-  // Card Header
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-    backgroundColor: '#FFFFFF',
-  },
-  placeImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    marginRight: 14,
-    borderWidth: 1,
-    borderColor: '#EDF2F7',
-  },
-  headerInfo: {
-    flex: 1,
-  },
-  placeName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#2D3748',
-    marginBottom: 2,
-  },
-  reviewDate: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  badgeContainer: {
-    backgroundColor: '#F0FDF4',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#15803D',
-    textTransform: 'uppercase',
-  },
+  cardHeader: { height: 180, position: 'relative' },
+  placeImage: { width: '100%', height: '100%' },
+  imageOverlay: { ...StyleSheet.absoluteFillObject },
+  placeInfoOverlay: { position: 'absolute', bottom: 15, left: 15, right: 15 },
+  placeName: { fontSize: 20, fontWeight: '800', color: 'white', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 4 },
+  reviewDate: { fontSize: 12, color: '#ccc', marginTop: 2, fontStyle: 'italic' },
+  badgeContainer: { position: 'absolute', top: 15, left: 15, backgroundColor: 'rgba(0,0,0,0.7)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: '#ff6b00' },
+  badgeText: { fontSize: 10, fontWeight: '700', color: '#ff6b00', textTransform: 'uppercase' },
 
-  // Card Body
-  cardBody: {
-    padding: 20,
-    paddingTop: 15,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  ratingNumber: {
-    marginLeft: 10,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
+  cardBody: { padding: 20, borderLeftWidth: 3, borderLeftColor: '#ff6b00' },
+  ratingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  starsContainer: { flexDirection: 'row' },
+  ratingPill: { backgroundColor: '#ffd700', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  ratingPillText: { color: '#000', fontWeight: '800', fontSize: 12 },
   
-  textContainer: {
-    flexDirection: 'row',
-    marginTop: 5,
-  },
-  quoteMark: {
-    fontSize: 50,
-    color: '#FFEDD5', // Color naranja muy suave
-    position: 'absolute',
-    top: -25,
-    left: -10,
-    zIndex: -1,
-    //fontFamily: 'serif', // A veces 'serif' da warning en Android si no está linkeada, mejor default
-  },
-  reviewText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: '#475569',
-    fontStyle: 'italic',
-  },
+  textContainer: { flexDirection: 'row', marginTop: 5 },
+  quoteMark: { fontSize: 40, color: 'rgba(255,255,255,0.1)', position: 'absolute', top: -20, left: -10 },
+  reviewText: { fontSize: 15, lineHeight: 24, color: '#ddd', fontStyle: 'italic', paddingLeft: 10 },
 
   // FOOTER & FAB
-  footer: {
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  footerText: {
-    color: '#CBD5E1',
-    fontSize: 12,
-  },
-  fabButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FF6B00',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-    shadowColor: '#FF6B00',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-  },
+  footer: { alignItems: 'center', marginTop: 20, borderTopWidth: 1, borderTopColor: '#222', paddingTop: 20 },
+  footerText: { color: '#444', fontSize: 12 },
+  fabButton: { position: 'absolute', right: 20, bottom: 30, width: 56, height: 56, borderRadius: 28, backgroundColor: '#ff6b00', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#ff6b00', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.4, shadowRadius: 10 },
 });

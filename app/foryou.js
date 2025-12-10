@@ -1,633 +1,529 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
-  ScrollView, 
+  FlatList, 
+  Image, 
   TouchableOpacity, 
-  ImageBackground, 
   StatusBar, 
   Dimensions,
-  Alert,
   Modal,
   TextInput,
+  Alert,
   ActivityIndicator,
-  FlatList,           // NUEVO: Para la lista de mensajes
-  KeyboardAvoidingView, // NUEVO: Para que el teclado no tape el chat
-  Platform            // NUEVO: Para detectar si es iOS o Android
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as API from '../services/api';
 
 const { width } = Dimensions.get('window');
 
+// DATOS ESTÁTICOS DE EJEMPLO (Respaldo)
+const POSTS_INICIALES = [
+  {
+    id: 1,
+    userId: 101, 
+    usuario: "Tasha de los Backyardigans",
+    avatar: "https://fbi.cults3d.com/uploaders/40342033/illustration-file/277a17de-b4a8-4d39-85a9-89edcfdf3e7e/tasha.png",
+    ubicacion: "Mirador de Yanahuara",
+    imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRJjrQRzZ9J-Z-Bby9PaZ-WsCLzD6wxr99udA&s",
+    descripcion: "Disfrutando de la vista del Misti con un buen queso helado. 🏔️🍦",
+    likes: 124,
+    likedByMe: false,
+    fecha: "Hace 2 horas",
+    comentarios: [
+      { user: "Pablo Escobar", text: "¡Qué hermosa vista! 😍" },
+      { user: "TurismoPeru", text: "El mejor lugar para fotos." }
+    ]
+  },
+  {
+    id: 2,
+    userId: 102,
+    usuario: "Pablo el explorador",
+    avatar: "https://fbi.cults3d.com/uploaders/40342033/illustration-file/40f7a3d4-3a88-427f-8b4b-70e6c5e02e21/pablo-detective.png",
+    ubicacion: "Cañón del Colca",
+    imagen: "https://www.peru.travel/Contenido/Atractivo/Imagen/es/8/1.2/Principal/Ca%C3%B1on%20del%20Colca.jpg",
+    descripcion: "El vuelo del cóndor es algo que tienes que ver al menos una vez en la vida. Majestuoso. pdta:Casi me lleva, asi que tengan cuidado 🦅",
+    likes: 89,
+    likedByMe: false,
+    fecha: "Hace 5 horas",
+    comentarios: []
+  },
+  {
+    id: 3,
+    userId: 103,
+    usuario: "Ricardo Palma",
+    avatar: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ-5xsn7BPM5X9Wyjfs_5cwWJ7-wUJqlbT9oQ&s",
+    ubicacion: "Monasterio de Santa Catalina",
+    imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQT4ZTXV5btAqsuxEX69bAk4YXAKPEfp56h6g&s",
+    descripcion: "Perdiéndome en los colores y las calles de esta ciudad dentro de una ciudad. ❤️💙",
+    likes: 256,
+    likedByMe: true,
+    fecha: "Hace 1 día",
+    comentarios: [
+       { user: "Tasha de los Backyardigans", text: "Esos colores son únicos. me recuerdan a mi" }
+    ]
+  }
+];
+
 export default function ForYouPage() {
   const router = useRouter();
   
-  // --- ESTADOS EXISTENTES ---
-  const [usuario, setUsuario] = useState(null);
-  const [lugares, setLugares] = useState([]);
+  // --- ESTADOS ---
+  const [usuarioLogueado, setUsuarioLogueado] = useState(null);
+  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('Inicio');
-
-  // Estados para Modal Reseña
-  const [modalResenaVisible, setModalResenaVisible] = useState(false);
-  const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
-  const [calificacion, setCalificacion] = useState(5);
-  const [textoResena, setTextoResena] = useState('');
-  const [enviandoResena, setEnviandoResena] = useState(false);
-
-  // Estados para Favoritos
-  const [favoritosIds, setFavoritosIds] = useState(new Set());
-
-  // --- NUEVOS ESTADOS PARA EL CHATBOT ---
+  
+  // Interacción
+  const [comentarioInputs, setComentarioInputs] = useState({});
+  const [mostrarComentarios, setMostrarComentarios] = useState({});
+  
+  // Chatbot & Inbox
   const [chatVisible, setChatVisible] = useState(false);
+  const [inboxVisible, setInboxVisible] = useState(false);
+  const [mensajes, setMensajes] = useState([{ id: 1, text: "¡Hola viajero! 🏔️ Soy PachaBot.", sender: 'bot' }]);
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState([
-    { id: 1, text: "¡Hola! 👋 Soy PachaBot. ¿En qué puedo ayudarte hoy sobre Arequipa?", sender: 'bot' }
-  ]);
-  const flatListRef = useRef(null); // Para hacer scroll automático al último mensaje
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [usuariosMap, setUsuariosMap] = useState({});
+  
+  const flatListRef = useRef(null);
 
-  // --- CARGA INICIAL ---
+  // --- LÓGICA DE PERSISTENCIA ---
+  const mergeWithLocalData = async (listaPosts) => {
+    try {
+      const json = await AsyncStorage.getItem("pacha_feed_interactions");
+      const savedData = json ? JSON.parse(json) : {};
+      
+      return listaPosts.map(p => {
+        const saved = savedData[p.id];
+        if (!saved) return p;
+        return {
+          ...p,
+          likedByMe: saved.likedByMe !== undefined ? saved.likedByMe : p.likedByMe,
+          likes: saved.likes !== undefined ? saved.likes : p.likes,
+          comentarios: saved.newComments ? [...p.comentarios, ...saved.newComments] : p.comentarios
+        };
+      });
+    } catch (e) {
+      return listaPosts;
+    }
+  };
+
   useEffect(() => {
-    cargarDatos();
+    cargarTodo();
   }, []);
 
-  const cargarDatos = async () => {
+  const cargarTodo = async () => {
     try {
       setLoading(true);
-      
-      // 1. Usuario
       const userInfo = await API.getUserInfo().catch(() => null);
-      setUsuario(userInfo);
-
-      // 2. Lugares (Trae TODO de la base de datos)
-      const dataLugares = await API.getTouristLocations();
-      if (Array.isArray(dataLugares)) {
-        // Eliminamos duplicados por ID
-        const unicos = dataLugares.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-        setLugares(unicos);
-      }
-
-      // 3. Favoritos
+      
       if (userInfo) {
-        const dataFavs = await API.getFavorites();
-        const ids = new Set(dataFavs.map(f => f.id || f.lugar_id));
-        setFavoritosIds(ids);
-      }
-
-    } catch (error) {
-      console.error('Error cargando datos:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- AGRUPACIÓN DINÁMICA ---
-  const lugaresPorCategoria = useMemo(() => {
-    const grupos = {};
-    lugares.forEach(lugar => {
-      const catNombre = lugar.categoria || "General";
-      if (!grupos[catNombre]) {
-        grupos[catNombre] = [];
-      }
-      grupos[catNombre].push(lugar);
-    });
-    return grupos;
-  }, [lugares]);
-
-  // --- HELPER DE ICONOS ---
-  const getCategoryIcon = (nombreCategoria) => {
-    const cat = nombreCategoria.toLowerCase();
-    if (cat.includes('gastr') || cat.includes('comida')) return '🍲';
-    if (cat.includes('avent') || cat.includes('deport')) return '🧗';
-    if (cat.includes('hist') || cat.includes('arq')) return '🏛️';
-    if (cat.includes('relig') || cat.includes('iglesia')) return '⛪';
-    if (cat.includes('mirador') || cat.includes('vista')) return '🔭';
-    if (cat.includes('natur') || cat.includes('camp')) return '🌿';
-    if (cat.includes('cult') || cat.includes('museo')) return '🎭';
-    if (cat.includes('noct') || cat.includes('fiesta')) return '🍸';
-    return '🌎';
-  };
-
-  // --- ACCIONES GENERALES ---
-  const handleLogout = async () => {
-    Alert.alert("Cerrar Sesión", "¿Seguro que quieres salir?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Salir", style: "destructive", onPress: async () => {
-          await API.logout();
-          router.replace('/login');
-      }}
-    ]);
-  };
-
-  const toggleFavorito = async (lugar) => {
-    if (!usuario) {
-      Alert.alert("Atención", "Inicia sesión para guardar favoritos.");
-      return;
-    }
-    const esFavorito = favoritosIds.has(lugar.id);
-    const nuevasIds = new Set(favoritosIds);
-    
-    if (esFavorito) {
-        Alert.alert("Aviso", "Ve a la sección Favoritos para gestionar tu lista.");
-    } else {
-        nuevasIds.add(lugar.id);
-        setFavoritosIds(nuevasIds);
-        try {
-            await API.addFavorite(lugar.id);
-        } catch(e) {
-            nuevasIds.delete(lugar.id);
-            setFavoritosIds(nuevasIds);
-        }
-    }
-  };
-
-  // --- ACCIONES DE RESEÑA ---
-  const abrirModalResena = (lugar) => {
-    if (!usuario) {
-        Alert.alert("Atención", "Inicia sesión para escribir reseñas.");
-        return;
-    }
-    setLugarSeleccionado(lugar);
-    setModalResenaVisible(true);
-    setCalificacion(5);
-    setTextoResena('');
-  };
-
-  const enviarResena = async () => {
-    if (!textoResena.trim()) {
-        Alert.alert("Falta texto", "Por favor escribe tu opinión.");
-        return;
-    }
-    setEnviandoResena(true);
-    try {
-        await API.createReview(lugarSeleccionado.id, calificacion, textoResena);
-        Alert.alert("¡Éxito!", "Tu reseña se ha publicado.");
-        setModalResenaVisible(false);
-    } catch(e) {
-        Alert.alert("Error", "No se pudo enviar la reseña.");
-    } finally {
-        setEnviandoResena(false);
-    }
-  };
-
-  // --- LÓGICA DEL CHATBOT (NUEVO) ---
-  const handleSendChat = () => {
-    if (!chatInput.trim()) return;
-
-    const userMsg = { id: Date.now(), text: chatInput, sender: 'user' };
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatInput("");
-
-    // Simulación de respuesta del bot
-    setTimeout(() => {
-        const botResponses = [
-            "¡Qué interesante! Arequipa tiene mucho que ofrecer.",
-            "Te recomiendo visitar el Cañón del Colca, es impresionante.",
-            "Para comer, no puedes perderte un buen Adobo Arequipeño.",
-            "¿Has visitado ya el Monasterio de Santa Catalina?",
-            "Soy un bot en entrenamiento, pero pronto sabré todo sobre la ciudad blanca 🗻"
-        ];
-        const randomResp = botResponses[Math.floor(Math.random() * botResponses.length)];
+        setUsuarioLogueado(userInfo);
         
-        const botMsg = { id: Date.now() + 1, text: randomResp, sender: 'bot' };
-        setChatMessages(prev => [...prev, botMsg]);
+        // Cargar Usuarios (Mapeo de Nombres)
+        const usersData = await API.obtenerUsuarios().catch(()=>({success:false}));
+        if(usersData && usersData.success){
+            const map = {};
+            usersData.usuarios.forEach(u => map[u.id] = u.nombre);
+            setUsuariosMap(map);
+        }
+
+        // Cargar Solicitudes
+        const relJson = await AsyncStorage.getItem("pacha_relaciones");
+        const relaciones = relJson ? JSON.parse(relJson) : [];
+        setSolicitudes(relaciones.filter(r => r.to === userInfo.id && r.status === 'pending'));
+
+        // Cargar Reseñas Reales
+        let todosLosPosts = [...POSTS_INICIALES];
+        try {
+           const resData = await API.obtenerResenas(userInfo.id);
+           if (resData && resData.success && resData.resenas) {
+              const misPosts = resData.resenas.map(r => ({
+                  id: `review-${r.id}`, 
+                  userId: userInfo.id,
+                  usuario: userInfo.nombre,
+                  avatar: `https://ui-avatars.com/api/?name=${userInfo.nombre}&background=ff6b00&color=fff`,
+                  ubicacion: r.lugar_nombre || "Arequipa", 
+                  imagen: r.lugar_imagen || "https://www.peru.travel/Contenido/Atractivo/Imagen/es/10/1.1/Principal/Yanahuara.jpg", 
+                  descripcion: `⭐ ${r.calificacion}/5 — ${r.texto}`, 
+                  likes: 0, 
+                  likedByMe: false,
+                  fecha: "Reciente",
+                  comentarios: []
+              }));
+              todosLosPosts = [...misPosts, ...POSTS_INICIALES];
+           }
+        } catch (e) { console.log("Sin reseñas nuevas o error API"); }
+
+        const finalPosts = await mergeWithLocalData(todosLosPosts);
+        setPosts(finalPosts);
+      } else {
+         setPosts(await mergeWithLocalData(POSTS_INICIALES));
+      }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  // --- ACCIONES ---
+  const handleLike = async (postId) => {
+    const nuevosPosts = posts.map(post => {
+        if (post.id === postId) {
+            const newLikedState = !post.likedByMe;
+            const newLikes = newLikedState ? post.likes + 1 : post.likes - 1;
+            return { ...post, likedByMe: newLikedState, likes: newLikes };
+        }
+        return post;
+    });
+    setPosts(nuevosPosts);
+
+    try {
+        const post = nuevosPosts.find(p => p.id === postId);
+        const json = await AsyncStorage.getItem("pacha_feed_interactions");
+        const savedData = json ? JSON.parse(json) : {};
+        savedData[postId] = { ...(savedData[postId] || {}), likedByMe: post.likedByMe, likes: post.likes };
+        await AsyncStorage.setItem("pacha_feed_interactions", JSON.stringify(savedData));
+    } catch(e) {}
+  };
+
+  const handleComentar = async (postId) => {
+    const texto = comentarioInputs[postId];
+    if (!texto || !texto.trim()) return;
+
+    const nuevoComentario = { user: usuarioLogueado?.nombre || "Yo", text: texto };
+    const nuevosPosts = posts.map(p => {
+        if (p.id === postId) return { ...p, comentarios: [...p.comentarios, nuevoComentario] };
+        return p;
+    });
+    setPosts(nuevosPosts);
+    setComentarioInputs({...comentarioInputs, [postId]: ''});
+    setMostrarComentarios({...mostrarComentarios, [postId]: true});
+
+    try {
+        const json = await AsyncStorage.getItem("pacha_feed_interactions");
+        const savedData = json ? JSON.parse(json) : {};
+        const postData = savedData[postId] || {};
+        const newComments = [...(postData.newComments || []), nuevoComentario];
+        savedData[postId] = { ...postData, newComments };
+        await AsyncStorage.setItem("pacha_feed_interactions", JSON.stringify(savedData));
+    } catch(e) {}
+  };
+
+  const responderSolicitud = async (id, aceptar) => {
+    const relJson = await AsyncStorage.getItem("pacha_relaciones");
+    const relaciones = relJson ? JSON.parse(relJson) : [];
+    if (aceptar) {
+        const nuevas = relaciones.map(r => r.id === id ? { ...r, status: 'accepted' } : r);
+        await AsyncStorage.setItem("pacha_relaciones", JSON.stringify(nuevas));
+        Alert.alert("¡Conectado!", "Ahora son amigos.");
+    } else {
+        const filtradas = relaciones.filter(r => r.id !== id);
+        await AsyncStorage.setItem("pacha_relaciones", JSON.stringify(filtradas));
+    }
+    setSolicitudes(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleChatSend = () => {
+    if(!chatInput.trim()) return;
+    const userMsg = { id: Date.now(), text: chatInput, sender: 'user' };
+    setMensajes(prev => [...prev, userMsg]);
+    setChatInput("");
+    setTimeout(() => {
+        setMensajes(prev => [...prev, { id: Date.now()+1, text: "¡Qué interesante! Cuéntame más.", sender: 'bot' }]);
     }, 1000);
   };
 
-  // Renderizador de mensajes del chat
-  const renderChatMessage = ({ item }) => {
-    const isBot = item.sender === 'bot';
-    return (
-        <View style={[
-            styles.chatBubble, 
-            isBot ? styles.chatBubbleBot : styles.chatBubbleUser
-        ]}>
-            <Text style={[
-                styles.chatText,
-                isBot ? styles.chatTextBot : styles.chatTextUser
-            ]}>
-                {item.text}
-            </Text>
-        </View>
-    );
-  };
+  // --- COMPONENTE: BARRA DE NAVEGACIÓN SUPERIOR (HISTORIAS - LIMPIA) ---
+  const NavBubble = ({ title, icon, route, isAction }) => (
+    <TouchableOpacity 
+       style={styles.navBubble} 
+       onPress={() => isAction ? route() : router.push(route)}
+    >
+       <LinearGradient colors={['#333', '#111']} style={styles.navBubbleIcon}>
+           <Text style={{fontSize: 22}}>{icon}</Text>
+       </LinearGradient>
+       <Text style={styles.navBubbleText}>{title}</Text>
+    </TouchableOpacity>
+  );
 
-  const renderStars = () => (
-    <View style={styles.starsContainer}>
-        {[1,2,3,4,5].map(star => (
-            <TouchableOpacity key={star} onPress={() => setCalificacion(star)}>
-                <Ionicons 
-                    name={star <= calificacion ? "star" : "star-outline"} 
-                    size={32} 
-                    color="#FFB800" 
-                />
+  const renderHeaderComponent = () => (
+      <View>
+          <View style={styles.storiesContainer}>
+              {/* AQUÍ ESTÁ EL CAMBIO: SOLO LAS OPCIONES QUE FALTAN ABAJO */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15, gap: 15}}>
+                  <NavBubble title="Rutas" icon="📍" route="/rutas" />
+                  <NavBubble title="Equipo" icon="👥" route="/contactanos" />
+                  <NavBubble title="RDF" icon="🌐" isAction route={() => Alert.alert("RDF", "Datos Semánticos: Pronto")} />
+              </ScrollView>
+          </View>
+          <View style={styles.divider} />
+      </View>
+  );
+
+  // --- RENDER POST ---
+  const renderPost = ({ item }) => (
+    <View style={styles.card}>
+        <View style={styles.cardHeader}>
+            <View style={styles.userMeta}>
+                <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                <View>
+                    <Text style={styles.username}>{item.usuario}</Text>
+                    <Text style={styles.location}>{item.ubicacion}</Text>
+                </View>
+            </View>
+            <TouchableOpacity onPress={() => router.push(`/perfil?id=${item.userId}`)}>
+                <Ionicons name="ellipsis-horizontal" size={20} color="#a0a0a0" />
             </TouchableOpacity>
-        ))}
+        </View>
+
+        <View style={styles.imageContainer}>
+            <Image source={{ uri: item.imagen }} style={styles.postImage} resizeMode="cover" />
+        </View>
+
+        <View style={styles.actionsRow}>
+            <View style={styles.leftActions}>
+                <TouchableOpacity onPress={() => handleLike(item.id)}>
+                    <Ionicons name={item.likedByMe ? "heart" : "heart-outline"} size={28} color={item.likedByMe ? "#ff4757" : "white"} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMostrarComentarios({...mostrarComentarios, [item.id]: !mostrarComentarios[item.id]})}>
+                    <Ionicons name="chatbubble-outline" size={26} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity>
+                    <Ionicons name="paper-plane-outline" size={26} color="white" />
+                </TouchableOpacity>
+            </View>
+            <TouchableOpacity><Ionicons name="bookmark-outline" size={26} color="white" /></TouchableOpacity>
+        </View>
+
+        <View style={styles.captionContainer}>
+            <Text style={styles.likesText}>{item.likes} Me gusta</Text>
+            <Text style={styles.captionText}>
+                <Text style={styles.usernameCaption}>{item.usuario}</Text> {item.descripcion}
+            </Text>
+            <Text style={styles.timeAgo}>{item.fecha}</Text>
+        </View>
+
+        {mostrarComentarios[item.id] && (
+            <View style={styles.commentsSection}>
+                {item.comentarios.map((c, i) => (
+                    <Text key={i} style={styles.commentText}>
+                        <Text style={styles.commentUser}>{c.user} </Text>{c.text}
+                    </Text>
+                ))}
+                <View style={styles.inputContainer}>
+                    <TextInput 
+                        style={styles.commentInput} 
+                        placeholder="Comentar..." 
+                        placeholderTextColor="#666"
+                        value={comentarioInputs[item.id] || ''}
+                        onChangeText={t => setComentarioInputs({...comentarioInputs, [item.id]: t})}
+                    />
+                    <TouchableOpacity onPress={() => handleComentar(item.id)}>
+                        <Text style={styles.postBtnText}>Publicar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        )}
     </View>
   );
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* HEADER */}
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      
+      {/* HEADER SUPERIOR */}
       <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <View style={styles.mountainIcon} />
-          <Text style={styles.logoText}>
-            <Text style={{color:'#1A202C'}}>Pacha</Text>
-            <Text style={{color:'#FF6B00'}}>Qutec</Text>
-          </Text>
-        </View>
-        
-        {usuario && (
-            <View style={styles.userBadge}>
-                <Text style={styles.userText}>Hola, {usuario.nombre}</Text>
-            </View>
-        )}
+         <View style={styles.logoRow}>
+             <LinearGradient colors={['#ff6b00', '#fbbf24']} style={styles.mountainIcon} />
+             <Text style={styles.logoText}>PachaQutec</Text>
+         </View>
+         <View style={styles.headerIcons}>
+             <TouchableOpacity onPress={() => setInboxVisible(true)} style={styles.iconBtn}>
+                 <Ionicons name="heart-outline" size={26} color="white" />
+                 {solicitudes.length > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{solicitudes.length}</Text></View>}
+             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setChatVisible(true)}>
+                 <Ionicons name="chatbubble-ellipses-outline" size={26} color="white" />
+             </TouchableOpacity>
+         </View>
       </View>
 
-      {/* MENÚ DE NAVEGACIÓN */}
-      <View style={styles.navWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navScroll}>
-            {[
-                {id:'Inicio', ruta: null},
-                {id:'Lugares', ruta: '/lugares'},
-                {id:'Favoritos', ruta: '/favoritos'},
-                {id:'Rutas', ruta: '/rutas'},
-                {id:'Reseñas', ruta: '/resenas'},
-                {id:'Contacto', ruta: '/contactanos'},
-            ].map(item => (
-                <TouchableOpacity 
-                    key={item.id} 
-                    style={[styles.navPill, activeTab === item.id && styles.navPillActive]}
-                    onPress={() => {
-                        setActiveTab(item.id);
-                        if(item.ruta) router.push(item.ruta);
-                    }}
-                >
-                    <Text style={[styles.navText, activeTab === item.id && styles.navTextActive]}>
-                        {item.id}
-                    </Text>
-                </TouchableOpacity>
-            ))}
-            
-            <TouchableOpacity 
-                style={[styles.navPill, styles.rdfPill]} 
-                onPress={() => Alert.alert("Web Semántica", "Visualizador RDF próximamente.")}
-            >
-                <Text style={styles.rdfText}>🌐 RDF</Text>
-            </TouchableOpacity>
+      {/* FEED + STORIES */}
+      {loading ? (
+          <ActivityIndicator size="large" color="#ff6b00" style={{marginTop: 50}} />
+      ) : (
+          <FlatList
+            data={posts}
+            keyExtractor={item => item.id.toString()}
+            renderItem={renderPost}
+            ListHeaderComponent={renderHeaderComponent} // Aquí van las "historias" filtradas
+            contentContainerStyle={styles.feedContent}
+            showsVerticalScrollIndicator={false}
+          />
+      )}
 
-            <TouchableOpacity style={styles.navPill} onPress={handleLogout}>
-                <Text style={styles.logoutText}>Salir</Text>
-            </TouchableOpacity>
-        </ScrollView>
+      {/* BARRA INFERIOR (TAB BAR) */}
+      <View style={styles.tabBar}>
+         <TouchableOpacity onPress={() => {}}><Ionicons name="home" size={28} color="#ff6b00" /></TouchableOpacity>
+         <TouchableOpacity onPress={() => router.push('/lugares')}><Ionicons name="search" size={28} color="#fff" /></TouchableOpacity>
+         <TouchableOpacity onPress={() => router.push('/resenas')}><Ionicons name="add-circle-outline" size={32} color="#fff" /></TouchableOpacity>
+         <TouchableOpacity onPress={() => router.push('/favoritos')}><Ionicons name="heart-outline" size={28} color="#fff" /></TouchableOpacity>
+         <TouchableOpacity onPress={() => router.push('/perfil')}>
+            {usuarioLogueado ? (
+                <View style={styles.miniAvatar}><Text style={{color:'white', fontWeight:'bold', fontSize:10}}>{usuarioLogueado.nombre.charAt(0)}</Text></View>
+            ) : (
+                <Ionicons name="person-circle-outline" size={28} color="#fff" />
+            )}
+         </TouchableOpacity>
       </View>
 
-      {/* CONTENIDO PRINCIPAL */}
-      <ScrollView style={styles.mainContent} showsVerticalScrollIndicator={false}>
-        
-        {/* HERO BANNER */}
-        <TouchableOpacity activeOpacity={0.9} onPress={() => router.push('/lugares')}>
-            <ImageBackground
-                source={{ uri: 'https://www.peru.travel/Contenido/Atractivo/Imagen/es/8/1.2/Principal/Ca%C3%B1on%20del%20Colca.jpg' }}
-                style={styles.heroBanner}
-                imageStyle={{ borderRadius: 20 }}
-            >
-                <LinearGradient 
-                    colors={['transparent', 'rgba(0,0,0,0.8)']} 
-                    style={styles.heroOverlay}
-                >
-                    <Text style={styles.heroSubtitle}>DESTINO DESTACADO</Text>
-                    <Text style={styles.heroTitle}>Cañón del Colca</Text>
-                    <View style={styles.heroBtn}>
-                        <Text style={styles.heroBtnText}>Explorar ahora</Text>
+      {/* CHAT MODAL */}
+      <Modal visible={chatVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={()=>setChatVisible(false)}>
+         <View style={styles.modalContainer}>
+             <View style={styles.modalHeader}>
+                 <Text style={styles.modalTitle}>Asistente Pacha</Text>
+                 <TouchableOpacity onPress={()=>setChatVisible(false)}><Ionicons name="close" size={28} color="white"/></TouchableOpacity>
+             </View>
+             <FlatList 
+                data={mensajes} 
+                renderItem={({item}) => (
+                    <View style={[styles.msgBubble, item.sender==='user' ? styles.msgUser : styles.msgBot]}>
+                        <Text style={item.sender==='user' ? styles.textUser : styles.textBot}>{item.text}</Text>
                     </View>
-                </LinearGradient>
-            </ImageBackground>
-        </TouchableOpacity>
-
-        <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>🏛️ Descubre Arequipa</Text>
-            <Text style={styles.sectionDesc}>Explora los tesoros escondidos de la ciudad blanca</Text>
-        </View>
-
-        {loading ? (
-            <ActivityIndicator size="large" color="#FF6B00" style={{marginTop: 50}} />
-        ) : (
-            /* RENDERIZADO DINÁMICO DE TODAS LAS CATEGORÍAS */
-            Object.keys(lugaresPorCategoria).map((categoria) => (
-                <View key={categoria} style={styles.categoryBlock}>
-                    
-                    {/* Cabecera de Categoría */}
-                    <View style={styles.catHeader}>
-                        <View style={styles.catInfo}>
-                            <View style={styles.catIcon}>
-                                <Text style={{fontSize: 22}}>
-                                    {getCategoryIcon(categoria)}
-                                </Text>
-                            </View>
-                            <View>
-                                <Text style={styles.catName}>{categoria}</Text>
-                                <Text style={styles.catSub}>Explora lo mejor en {categoria}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.catBadge}>
-                            <Text style={styles.catBadgeText}>{lugaresPorCategoria[categoria].length} lugares</Text>
-                        </View>
-                    </View>
-
-                    {/* Carrusel Horizontal */}
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesRow}>
-                        {lugaresPorCategoria[categoria].map((lugar) => (
-                            <TouchableOpacity 
-                                key={lugar.id} 
-                                style={styles.placeCard}
-                                activeOpacity={0.9}
-                                onPress={() => {
-                                    router.push({ 
-                                      pathname: '/lugares', 
-                                      params: { 
-                                        filtro_categoria: lugar.categoria_id,
-                                        nombre_categoria: categoria
-                                      } 
-                                    });
-                                }}
-                            >
-                                <ImageBackground 
-                                    source={{ uri: lugar.imagen_url }} 
-                                    style={styles.placeImage}
-                                    imageStyle={{ borderRadius: 16 }}
-                                >
-                                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.placeOverlay}>
-                                        <Text style={styles.placeName} numberOfLines={1}>{lugar.nombre}</Text>
-                                        <Text style={styles.placeCta}>Ver detalles</Text>
-                                    </LinearGradient>
-
-                                    <TouchableOpacity 
-                                        style={styles.heartBtn}
-                                        onPress={() => toggleFavorito(lugar)}
-                                    >
-                                        <Ionicons 
-                                            name={favoritosIds.has(lugar.id) ? "heart" : "heart-outline"} 
-                                            size={18} 
-                                            color={favoritosIds.has(lugar.id) ? "#FF4757" : "white"} 
-                                        />
-                                    </TouchableOpacity>
-                                </ImageBackground>
-
-                                <TouchableOpacity 
-                                    style={styles.quickReviewBtn}
-                                    onPress={() => abrirModalResena(lugar)}
-                                >
-                                    <Text style={styles.quickReviewText}>✍️ Escribir reseña</Text>
-                                </TouchableOpacity>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-
-                </View>
-            ))
-        )}
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
-
-      {/* ASISTENTE FLOTANTE (Ahora abre el chat) */}
-      <TouchableOpacity 
-        style={styles.fab}
-        activeOpacity={0.8}
-        onPress={() => setChatVisible(true)}
-      >
-        <LinearGradient colors={['#ff6b00', '#ff9100']} style={styles.fabGradient}>
-            <Ionicons name="chatbubble-ellipses" size={28} color="white" />
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* --- MODAL DE RESEÑA --- */}
-      <Modal
-        visible={modalResenaVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setModalResenaVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-                <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Nueva Reseña</Text>
-                    <TouchableOpacity onPress={() => setModalResenaVisible(false)}>
-                        <Ionicons name="close" size={24} color="#333" />
-                    </TouchableOpacity>
-                </View>
-                
-                <Text style={styles.modalSubtitle}>
-                    Opinando sobre <Text style={{fontWeight:'bold'}}>{lugarSeleccionado?.nombre}</Text>
-                </Text>
-
-                {renderStars()}
-
-                <TextInput 
-                    style={styles.textArea}
-                    placeholder="Cuéntanos tu experiencia..."
-                    multiline
-                    numberOfLines={4}
-                    value={textoResena}
-                    onChangeText={setTextoResena}
-                />
-
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity 
-                        style={styles.btnCancel} 
-                        onPress={() => setModalResenaVisible(false)}
-                    >
-                        <Text style={styles.btnCancelText}>Cancelar</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                        style={styles.btnSubmit}
-                        onPress={enviarResena}
-                        disabled={enviandoResena}
-                    >
-                        {enviandoResena ? (
-                            <ActivityIndicator color="white" />
-                        ) : (
-                            <Text style={styles.btnSubmitText}>Publicar</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
+                )}
+                keyExtractor={i=>i.id.toString()}
+                contentContainerStyle={{padding:20, gap:10}}
+             />
+             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+                 <View style={styles.chatInputRow}>
+                     <TextInput style={styles.chatInput} value={chatInput} onChangeText={setChatInput} placeholder="Escribe..." placeholderTextColor="#888" />
+                     <TouchableOpacity onPress={handleChatSend}><Ionicons name="send" size={24} color="#ff6b00"/></TouchableOpacity>
+                 </View>
+             </KeyboardAvoidingView>
+         </View>
       </Modal>
 
-      {/* --- MODAL DEL CHATBOT (NUEVO) --- */}
-      <Modal
-        visible={chatVisible}
-        animationType="slide"
-        presentationStyle="pageSheet" // Estilo moderno en iOS
-        onRequestClose={() => setChatVisible(false)}
-      >
-        <View style={styles.chatContainer}>
-            {/* Header del Chat */}
-            <LinearGradient colors={['#FF6B00', '#FF8F00']} style={styles.chatHeader}>
-                <View style={styles.chatHeaderContent}>
-                    <View style={styles.botAvatar}>
-                        <Ionicons name="logo-android" size={24} color="#FF6B00" />
-                    </View>
-                    <View>
-                        <Text style={styles.chatTitle}>PachaBot</Text>
-                        <Text style={styles.chatStatus}>En línea</Text>
-                    </View>
-                </View>
-                <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.closeChatBtn}>
-                    <Ionicons name="close" size={26} color="white" />
-                </TouchableOpacity>
-            </LinearGradient>
-
-            {/* Lista de Mensajes */}
-            <FlatList
-                ref={flatListRef}
-                data={chatMessages}
-                keyExtractor={item => item.id.toString()}
-                renderItem={renderChatMessage}
-                contentContainerStyle={styles.chatListContent}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            />
-
-            {/* Input con KeyboardAvoidingView */}
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === "ios" ? "padding" : "height"} 
-                keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
-            >
-                <View style={styles.chatInputContainer}>
-                    <TextInput
-                        style={styles.chatInput}
-                        placeholder="Escribe tu mensaje..."
-                        value={chatInput}
-                        onChangeText={setChatInput}
-                        returnKeyType="send"
-                        onSubmitEditing={handleSendChat}
-                    />
-                    <TouchableOpacity style={styles.sendBtn} onPress={handleSendChat}>
-                        <Ionicons name="send" size={20} color="white" />
-                    </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
-        </View>
+      {/* INBOX MODAL */}
+      <Modal visible={inboxVisible} animationType="fade" transparent onRequestClose={()=>setInboxVisible(false)}>
+         <View style={styles.inboxOverlay}>
+             <View style={styles.inboxCard}>
+                 <View style={styles.inboxHeader}>
+                     <Text style={styles.inboxTitle}>Notificaciones</Text>
+                     <TouchableOpacity onPress={()=>setInboxVisible(false)}><Ionicons name="close" size={24} color="#aaa"/></TouchableOpacity>
+                 </View>
+                 {solicitudes.length === 0 ? (
+                     <Text style={styles.emptyInbox}>No tienes notificaciones pendientes.</Text>
+                 ) : (
+                     solicitudes.map(s => (
+                         <View key={s.id} style={styles.requestRow}>
+                             <Text style={styles.reqText}><Text style={{fontWeight:'bold', color:'white'}}>{usuariosMap[s.from] || "Usuario"}</Text> quiere conectar</Text>
+                             <View style={{flexDirection:'row', gap:10}}>
+                                 <TouchableOpacity onPress={()=>responderSolicitud(s.id, true)} style={styles.btnConfirm}><Text style={{color:'white', fontWeight:'bold'}}>✓</Text></TouchableOpacity>
+                                 <TouchableOpacity onPress={()=>responderSolicitud(s.id, false)} style={styles.btnDeny}><Text style={{color:'#ff4757', fontWeight:'bold'}}>✕</Text></TouchableOpacity>
+                             </View>
+                         </View>
+                     ))
+                 )}
+             </View>
+         </View>
       </Modal>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: '#000000' },
   
-  // HEADER
+  // NAVBAR
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 50, paddingBottom: 15,
-    backgroundColor: 'rgba(255,255,255,0.95)', borderBottomWidth: 1, borderBottomColor: '#F1F5F9'
+    paddingTop: 50, paddingBottom: 10, paddingHorizontal: 15,
+    backgroundColor: '#000', borderBottomWidth: 1, borderBottomColor: '#1a1a1a'
   },
-  logoContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  mountainIcon: { width: 28, height: 28, backgroundColor: '#FF6B00', borderRadius: 4, transform: [{rotate:'45deg'}] },
-  logoText: { fontSize: 20, fontWeight: '800' },
-  userBadge: { backgroundColor: '#EDF2F7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  userText: { fontSize: 12, fontWeight: '600', color: '#2D3748' },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mountainIcon: { width: 24, height: 24, borderRadius: 4, transform: [{rotate:'45deg'}] },
+  logoText: { fontSize: 22, fontWeight: '800', color: 'white', letterSpacing: -0.5 },
+  headerIcons: { flexDirection: 'row', gap: 20 },
+  iconBtn: { position: 'relative' },
+  badge: { position: 'absolute', top: -2, right: -2, backgroundColor: '#ff4757', width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
 
-  // NAV SCROLL
-  navWrapper: { height: 60, backgroundColor: 'white', shadowColor:'#000', shadowOpacity:0.05, shadowOffset:{width:0,height:2}, elevation:2 },
-  navScroll: { paddingHorizontal: 15, alignItems: 'center', gap: 10 },
-  navPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  navPillActive: { backgroundColor: '#FFF5EB' },
-  navText: { fontWeight: '600', color: '#718096' },
-  navTextActive: { color: '#FF6B00' },
-  rdfPill: { backgroundColor: '#667eea', paddingHorizontal: 14 },
-  rdfText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
-  logoutText: { color: '#E53E3E', fontWeight: '600' },
+  // NAVIGATION BUBBLES
+  storiesContainer: { paddingVertical: 10, backgroundColor: '#000' },
+  navBubble: { alignItems: 'center', gap: 5, width: 70 },
+  navBubbleIcon: { 
+    width: 60, height: 60, borderRadius: 30, 
+    justifyContent: 'center', alignItems: 'center', 
+    borderWidth: 2, borderColor: '#333' 
+  },
+  navBubbleText: { color: 'white', fontSize: 11 },
+  divider: { height: 1, backgroundColor: '#1a1a1a' },
 
-  // CONTENT
-  mainContent: { padding: 20 },
+  // FEED
+  feedContent: { paddingBottom: 60 },
+  card: { marginBottom: 15, backgroundColor: '#000' },
   
-  // HERO
-  heroBanner: { height: 240, width: '100%', marginBottom: 30, shadowColor:'#000', shadowOpacity:0.2, shadowRadius:10, elevation:5 },
-  heroOverlay: { flex:1, borderRadius: 20, padding: 20, justifyContent: 'flex-end' },
-  heroSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 5, textTransform: 'uppercase' },
-  heroTitle: { color: 'white', fontSize: 28, fontWeight: '800', marginBottom: 15 },
-  heroBtn: { backgroundColor: '#FF6B00', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 25, alignSelf: 'flex-start' },
-  heroBtnText: { color: 'white', fontWeight: '700', fontSize: 14 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10 },
+  userMeta: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: '#333' },
+  username: { color: 'white', fontWeight: '700', fontSize: 13 },
+  location: { color: '#a0a0a0', fontSize: 11 },
 
-  // SECTION
-  sectionHeader: { alignItems: 'center', marginBottom: 30 },
-  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#2D3748', marginBottom: 5 },
-  sectionDesc: { fontSize: 13, color: '#718096' },
+  imageContainer: { width: width, height: 400 },
+  postImage: { width: '100%', height: '100%' },
 
-  // CATEGORY BLOCK
-  categoryBlock: { marginBottom: 40 },
-  catHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingHorizontal: 5 },
-  catInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  catIcon: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#FFF5EB', alignItems: 'center', justifyContent: 'center' },
-  catName: { fontSize: 18, fontWeight: '700', color: '#2D3748' },
-  catSub: { fontSize: 12, color: '#A0AEC0' },
-  catBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  catBadgeText: { fontSize: 11, fontWeight: '600', color: '#64748B' },
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, paddingBottom: 5 },
+  leftActions: { flexDirection: 'row', gap: 16 },
 
-  placesRow: { paddingHorizontal: 5, gap: 20 },
-  
-  // CARDS
-  placeCard: { width: 240, backgroundColor: 'white', borderRadius: 16, shadowColor:'#000', shadowOpacity:0.08, shadowRadius:8, elevation:3 },
-  placeImage: { width: '100%', height: 180, justifyContent: 'flex-end' },
-  placeOverlay: { padding: 15, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
-  placeName: { color: 'white', fontSize: 16, fontWeight: '700', textShadowColor:'rgba(0,0,0,0.5)', textShadowRadius:3 },
-  placeCta: { color: '#FF6B00', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 4 },
-  heartBtn: { position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: 8, borderRadius: 20 },
-  
-  quickReviewBtn: { padding: 12, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  quickReviewText: { color: '#667EEA', fontWeight: '600', fontSize: 13 },
+  captionContainer: { paddingHorizontal: 12 },
+  likesText: { color: 'white', fontWeight: '700', marginBottom: 5, fontSize: 13 },
+  captionText: { color: 'white', fontSize: 13, lineHeight: 18 },
+  usernameCaption: { fontWeight: '700' },
+  timeAgo: { color: '#666', fontSize: 10, marginTop: 5, textTransform: 'uppercase' },
 
-  // FAB
-  fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, shadowColor:'#FF6B00', shadowOpacity:0.4, shadowRadius:10, elevation:10 },
-  fabGradient: { width: '100%', height: '100%', borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
+  commentsSection: { paddingHorizontal: 12, marginTop: 8 },
+  commentText: { color: '#ddd', fontSize: 13, marginBottom: 2 },
+  commentUser: { fontWeight: '700', color: 'white' },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  commentInput: { flex: 1, color: 'white', fontSize: 12 },
+  postBtnText: { color: '#ff6b00', fontWeight: '600', fontSize: 12 },
 
-  // MODAL RESEÑA
-  modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding: 20 },
-  modalCard: { backgroundColor:'white', borderRadius: 20, padding: 25 },
-  modalHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 15 },
-  modalTitle: { fontSize: 20, fontWeight:'700', color:'#2D3748' },
-  modalSubtitle: { fontSize: 14, color:'#718096', marginBottom: 20, textAlign:'center' },
-  starsContainer: { flexDirection:'row', justifyContent:'center', gap: 10, marginBottom: 20 },
-  textArea: { backgroundColor:'#F7FAFC', borderRadius: 12, padding: 15, height: 100, textAlignVertical:'top', marginBottom: 20, borderWidth:1, borderColor:'#E2E8F0' },
-  modalButtons: { flexDirection:'row', gap: 15 },
-  btnCancel: { flex:1, padding: 12, backgroundColor:'#EDF2F7', borderRadius: 10, alignItems:'center' },
-  btnCancelText: { color:'#4A5568', fontWeight:'600' },
-  btnSubmit: { flex:1, padding: 12, backgroundColor:'#667EEA', borderRadius: 10, alignItems:'center' },
-  btnSubmitText: { color:'white', fontWeight:'600' },
+  // TAB BAR
+  tabBar: { 
+    position: 'absolute', bottom: 0, width: '100%', height: 50, backgroundColor: '#000',
+    flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: '#1a1a1a'
+  },
+  miniAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#ff6b00', justifyContent: 'center', alignItems: 'center' },
 
-  // --- STYLES CHATBOT (NUEVO) ---
-  chatContainer: { flex: 1, backgroundColor: '#F8FAFC' },
-  chatHeader: { paddingVertical: 15, paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 50 : 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  chatHeaderContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  botAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' },
-  chatTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  chatStatus: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
-  closeChatBtn: { padding: 5 },
-  
-  chatListContent: { padding: 20, gap: 15, paddingBottom: 20 },
-  
-  chatBubble: { maxWidth: '80%', padding: 15, borderRadius: 20, marginBottom: 2 },
-  chatBubbleBot: { backgroundColor: 'white', borderBottomLeftRadius: 4, alignSelf: 'flex-start', shadowColor:'#000', shadowOpacity:0.05, shadowRadius:5, elevation:2 },
-  chatBubbleUser: { backgroundColor: '#FF6B00', borderBottomRightRadius: 4, alignSelf: 'flex-end' },
-  
-  chatText: { fontSize: 15, lineHeight: 22 },
-  chatTextBot: { color: '#2D3748' },
-  chatTextUser: { color: 'white' },
-  
-  chatInputContainer: { flexDirection: 'row', padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#E2E8F0', alignItems: 'center', gap: 10 },
-  chatInput: { flex: 1, backgroundColor: '#F7FAFC', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 10, fontSize: 16, borderWidth: 1, borderColor: '#EDF2F7', maxHeight: 100 },
-  sendBtn: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#FF6B00', alignItems: 'center', justifyContent: 'center' }
+  // FAB CHAT (Movido para no tapar TabBar)
+  fabChat: { position: 'absolute', bottom: 80, right: 20 },
+  fabGradient: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+
+  // MODALES
+  modalContainer: { flex: 1, backgroundColor: '#121212' },
+  modalHeader: { padding: 15, paddingTop: 50, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#1a1a1a' },
+  modalTitle: { color: 'white', fontSize: 16, fontWeight: '700' },
+  msgBubble: { padding: 10, borderRadius: 16, maxWidth: '80%' },
+  msgBot: { backgroundColor: '#2a2a2a', alignSelf: 'flex-start' },
+  msgUser: { backgroundColor: '#ff6b00', alignSelf: 'flex-end' },
+  textBot: { color: '#ddd' },
+  textUser: { color: 'white' },
+  chatInputRow: { flexDirection: 'row', padding: 10, backgroundColor: '#1a1a1a', alignItems: 'center', gap: 10 },
+  chatInput: { flex: 1, backgroundColor: '#333', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, color: 'white' },
+
+  inboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
+  inboxCard: { width: '85%', backgroundColor: '#1a1a1a', borderRadius: 16, padding: 20 },
+  inboxHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  inboxTitle: { color: 'white', fontSize: 16, fontWeight: '700' },
+  requestRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#222' },
+  reqText: { color: '#ccc', flex: 1 },
+  btnConfirm: { backgroundColor: '#ff6b00', padding: 8, borderRadius: 6, marginRight: 8 },
+  btnDeny: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 8, borderRadius: 6 },
+  emptyInbox: { color: '#666', textAlign: 'center', padding: 20 }
 });
